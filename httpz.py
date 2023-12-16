@@ -185,12 +185,12 @@ async def process_file():
                 if domain:
                     tasks.add(asyncio.create_task(check_url(session, domain)))
 
-                    if len(tasks) >= args.concurrency:
+                    if len(tasks) >= args.concurrency: # Should be a better way to do this
                         done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
                         for task in done:
                             domain, protocol, title, body, dns_records, status_code = task.result()
-                            if title or body: # log results for dns?
+                            if title or body or dns_records:
                                 write_result_to_file(domain, protocol, title, body, dns_records, status_code)
                                 counter += 1
 
