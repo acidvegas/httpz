@@ -1,5 +1,7 @@
 # HTTPZ Web Scanner
 
+![](./.screens/preview.gif)
+
 A high-performance concurrent web scanner written in Python. HTTPZ efficiently scans domains for HTTP/HTTPS services, extracting valuable information like status codes, titles, SSL certificates, and more.
 
 ## Requirements
