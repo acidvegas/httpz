@@ -64,6 +64,8 @@ python httpz.py domains.txt [options]
 | `-mc CODES` | `--match-codes CODES`   | Only show specific status codes *(comma-separated)* |
 | `-ec CODES` | `--exclude-codes CODES` | Exclude specific status codes *(comma-separated)*   |
 | `-p`        | `--progress`            | Show progress counter                               |
+| `-ax`       | `--axfr`               | Try AXFR transfer against nameservers               |
+| `-r FILE`   | `--resolvers FILE`     | File containing DNS resolvers *(one per line)*      |
 
 ## Examples
 
@@ -75,4 +77,9 @@ python httpz.py domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -e
 Scan domains from stdin:
 ```bash
 cat domains.txt | python httpz.py - -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p
+```
+
+Scan domains with custom resolvers and AXFR checks:
+```bash
+python httpz.py domains.txt -r resolvers.txt -ax -c 100 -o output.jsonl
 ```

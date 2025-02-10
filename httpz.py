@@ -17,6 +17,7 @@ import os
 import dns.zone
 import dns.query
 import dns.resolver
+import random
 
 try:
 	import aiohttp
@@ -88,17 +89,40 @@ def info(msg: str) -> None:
 		logging.info(msg)
 
 
-async def resolve_dns(domain: str, timeout: int = 5) -> tuple:
+def load_resolvers(resolver_file: str = None) -> list:
+	'''
+	Load DNS resolvers from file or return default resolvers
+	
+	:param resolver_file: Path to file containing resolver IPs
+	:return: List of resolver IPs
+	'''
+	if resolver_file:
+		try:
+			with open(resolver_file) as f:
+				resolvers = [line.strip() for line in f if line.strip()]
+			if resolvers:
+				return resolvers
+		except Exception as e:
+			debug(f'Error loading resolvers from {resolver_file}: {str(e)}')
+	
+	# Default to Cloudflare, Google, Quad9 if no file or empty file
+	return ['1.1.1.1', '8.8.8.8', '9.9.9.9']
+
+
+async def resolve_dns(domain: str, timeout: int = 5, nameserver: str = None) -> tuple:
 	'''
 	Resolve A, AAAA, and CNAME records for a domain
 	
 	:param domain: domain to resolve
 	:param timeout: timeout in seconds
+	:param nameserver: specific nameserver to use
 	:return: tuple of (ips, cname)
 	'''
 
 	resolver = dns.asyncresolver.Resolver()
 	resolver.lifetime = timeout
+	if nameserver:
+		resolver.nameservers = [nameserver]
 	ips      = []
 	cname    = None
 
@@ -212,7 +236,7 @@ async def get_cert_info(session: aiohttp.ClientSession, url: str) -> dict:
 		return None
 
 
-async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redirects: bool = False, timeout: int = 5, check_axfr: bool = False) -> dict:
+async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redirects: bool = False, timeout: int = 5, check_axfr: bool = False, resolvers: list = None) -> dict:
 	'''
 	Check a single domain for its status code, title, and body preview
 	
@@ -221,7 +245,11 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 	:param follow_redirects: whether to follow redirects
 	:param timeout: timeout in seconds
 	:param check_axfr: whether to check for AXFR
+	:param resolvers: list of DNS resolvers to use
 	'''
+
+	# Pick random resolver for this domain
+	nameserver = random.choice(resolvers) if resolvers else None
 
 	if not domain.startswith(('http://', 'https://')):
 		protocols = ['https://', 'http://']
@@ -247,13 +275,15 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 		'tls'            : None
 	}
 
-	# Resolve DNS records
-	result['ips'], result['cname'] = await resolve_dns(base_domain, timeout)
+	# Resolve DNS records with chosen nameserver
+	result['ips'], result['cname'] = await resolve_dns(base_domain, timeout, nameserver)
 
 	# After DNS resolution, add nameserver lookup:
 	try:
 		resolver = dns.asyncresolver.Resolver()
 		resolver.lifetime = timeout
+		if nameserver:
+			resolver.nameservers = [nameserver]
 		ns_records = await resolver.resolve(base_domain, 'NS')
 		result['nameservers'] = [str(ns).rstrip('.') for ns in ns_records]
 	except Exception as e:
@@ -452,7 +482,7 @@ def format_status_output(result: dict, debug: bool = False, show_fields: dict = 
 	return ' '.join(parts)
 
 
-async def process_domains(input_source: str = None, debug: bool = False, concurrent_limit: int = 100, show_fields: dict = None, output_file: str = None, jsonl: bool = None, timeout: int = 5, match_codes: set = None, exclude_codes: set = None, show_progress: bool = False, check_axfr: bool = False):
+async def process_domains(input_source: str = None, debug: bool = False, concurrent_limit: int = 100, show_fields: dict = None, output_file: str = None, jsonl: bool = None, timeout: int = 5, match_codes: set = None, exclude_codes: set = None, show_progress: bool = False, check_axfr: bool = False, resolver_file: str = None):
 	'''
 	Process domains from a file or stdin with concurrent requests
 	
@@ -466,6 +496,7 @@ async def process_domains(input_source: str = None, debug: bool = False, concurr
 	:param exclude_codes: Set of status codes to exclude
 	:param show_progress: Whether to show progress counter
 	:param check_axfr: Whether to check for AXFR
+	:param resolver_file: Path to file containing DNS resolvers
 	'''
 
 	if input_source and input_source != '-' and not Path(input_source).exists():
@@ -477,6 +508,9 @@ async def process_domains(input_source: str = None, debug: bool = False, concurr
 
 	tasks = set()
 	processed_domains = 0  # Simple counter for all processed domains
+	
+	# Load resolvers
+	resolvers = load_resolvers(resolver_file)
 	
 	async def write_result(result: dict):
 		'''Write a single result to the output file'''
@@ -526,7 +560,7 @@ async def process_domains(input_source: str = None, debug: bool = False, concurr
 	async with aiohttp.ClientSession() as session:
 		# Start initial batch of tasks
 		for domain in itertools.islice(domain_generator(input_source), concurrent_limit):
-			task = asyncio.create_task(check_domain(session, domain, follow_redirects=show_fields['follow_redirects'], timeout=timeout, check_axfr=check_axfr))
+			task = asyncio.create_task(check_domain(session, domain, follow_redirects=show_fields['follow_redirects'], timeout=timeout, check_axfr=check_axfr, resolvers=resolvers))
 			tasks.add(task)
 		
 		# Process remaining domains, maintaining concurrent_limit active tasks
@@ -541,7 +575,7 @@ async def process_domains(input_source: str = None, debug: bool = False, concurr
 				result = await task
 				await write_result(result)
 			
-			task = asyncio.create_task(check_domain(session, domain, follow_redirects=show_fields['follow_redirects'], timeout=timeout, check_axfr=check_axfr))
+			task = asyncio.create_task(check_domain(session, domain, follow_redirects=show_fields['follow_redirects'], timeout=timeout, check_axfr=check_axfr, resolvers=resolvers))
 			tasks.add(task)
 		
 		# Wait for remaining tasks
@@ -637,6 +671,7 @@ def main():
 	parser.add_argument('-ec', '--exclude-codes', type=parse_status_codes, help='Exclude these status codes (comma-separated, e.g., 404,500)')
 	parser.add_argument('-p', '--progress', action='store_true', help='Show progress counter')
 	parser.add_argument('-ax', '--axfr', action='store_true', help='Try AXFR transfer against nameservers')
+	parser.add_argument('-r', '--resolvers', help='File containing DNS resolvers (one per line)')
 	
 	args = parser.parse_args()
 
@@ -672,7 +707,7 @@ def main():
 		show_fields = {k: True for k in show_fields}
 
 	try:
-		asyncio.run(process_domains(args.file, args.debug, args.concurrent, show_fields, args.output, args.jsonl, args.timeout, args.match_codes, args.exclude_codes, args.progress, check_axfr=args.axfr))
+		asyncio.run(process_domains(args.file, args.debug, args.concurrent, show_fields, args.output, args.jsonl, args.timeout, args.match_codes, args.exclude_codes, args.progress, check_axfr=args.axfr, resolver_file=args.resolvers))
 	except KeyboardInterrupt:
 		logging.warning(f'{Colors.YELLOW}Process interrupted by user{Colors.RESET}')
 		sys.exit(1)
