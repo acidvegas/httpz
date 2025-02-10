@@ -66,8 +66,8 @@ class Colors:
 	LIGHT_RED  = '\033[38;5;203m' # Light red
 	DARK_GREEN = '\033[38;5;22m'  # Dark green
 	PINK       = '\033[38;5;198m' # Bright pink
-	GRAY       = '\033[90m'  # Gray color
-	CYAN       = '\033[96m'  # Cyan color
+	GRAY       = '\033[90m'       # Gray color
+	CYAN       = '\033[96m'       # Cyan color
 
 
 _SILENT_MODE = False
@@ -236,7 +236,7 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 		'title'          : None,
 		'body'           : None,
 		'content_type'   : None,
-		'url'            : f"https://{base_domain}" if base_domain else domain,
+		'url'            : f"https://{base_domain}",
 		'ips'            : [],
 		'cname'          : None,
 		'nameservers'    : [],
