@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
-# httpz/__main__.py
+# httpz_scanner/__main__.py
 
 import asyncio
 import sys

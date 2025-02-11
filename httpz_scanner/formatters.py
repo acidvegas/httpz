@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
-# httpz/formatters.py
+# httpz_scanner/formatters.py
 
 from .colors import Colors
 from .utils  import human_size

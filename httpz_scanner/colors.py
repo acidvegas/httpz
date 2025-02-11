@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
-# httpz/colors.py
+# httpz_scanner/colors.py
 
 class Colors:
     '''ANSI color codes for terminal output'''

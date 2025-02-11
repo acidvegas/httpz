@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
-# httpz/dns.py
+# httpz_scanner/dns.py
 
 import asyncio
 import os

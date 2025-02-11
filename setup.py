@@ -8,8 +8,8 @@ with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='httpz-scanner',
-    version='1.0.6',
+    name='httpz_scanner',
+    version='1.0.7',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',
@@ -41,7 +41,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'httpz=httpz-scanner.__main__:cli',  # Updated import path
+            'httpz=httpz_scanner.__main__:cli',
         ],
     },
 ) 
