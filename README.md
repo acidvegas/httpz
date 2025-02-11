@@ -19,7 +19,7 @@ A high-performance concurrent web scanner written in Python. HTTPZ efficiently s
 ### Via pip (recommended)
 ```bash
 # Install from PyPI
-pip install httpz-scanner
+pip install httpz_scanner
 
 # The 'httpz' command will now be available in your terminal
 httpz --help
@@ -39,33 +39,33 @@ pip install -r requirements.txt
 
 Basic usage:
 ```bash
-python -m httpz-scanner domains.txt
+python -m httpz_scanner domains.txt
 ```
 
 Scan with all flags enabled and output to JSONL:
 ```bash
-python -m httpz-scanner domains.txt -all -c 100 -o results.jsonl -j -p
+python -m httpz_scanner domains.txt -all -c 100 -o results.jsonl -j -p
 ```
 
 Read from stdin:
 ```bash
-cat domains.txt | python -m httpz-scanner - -all -c 100
-echo "example.com" | python -m httpz-scanner - -all
+cat domains.txt | python -m httpz_scanner - -all -c 100
+echo "example.com" | python -m httpz_scanner - -all
 ```
 
 Filter by status codes and follow redirects:
 ```bash
-python -m httpz-scanner domains.txt -mc 200,301-399 -ec 404,500 -fr -p
+python -m httpz_scanner domains.txt -mc 200,301-399 -ec 404,500 -fr -p
 ```
 
 Show specific fields with custom timeout and resolvers:
 ```bash
-python -m httpz-scanner domains.txt -sc -ti -i -tls -to 10 -r resolvers.txt
+python -m httpz_scanner domains.txt -sc -ti -i -tls -to 10 -r resolvers.txt
 ```
 
 Full scan with all options:
 ```bash
-python -m httpz-scanner domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p -ax -r resolvers.txt
+python -m httpz_scanner domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p -ax -r resolvers.txt
 ```
 
 ### Python Library
