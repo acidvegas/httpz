@@ -9,7 +9,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='httpz_scanner',
-    version='1.0.7',
+    version='1.0.8',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',
@@ -41,7 +41,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'httpz=httpz_scanner.__main__:cli',
+            'httpz=httpz_scanner.cli:run',
         ],
     },
 ) 
