@@ -103,6 +103,11 @@ async def main():
     parser.add_argument('-r', '--resolvers', help='File containing DNS resolvers (one per line)')
     parser.add_argument('-to', '--timeout', type=int, default=5, help='Request timeout in seconds')
     
+    # If no arguments provided, print help and exit
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+    
     args = parser.parse_args()
 
     # Setup logging based on arguments
