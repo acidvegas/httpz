@@ -306,16 +306,39 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 	:param check_axfr: whether to check for AXFR
 	:param resolvers: list of DNS resolvers to use
 	'''
-
 	# Pick random resolver for this domain
 	nameserver = random.choice(resolvers) if resolvers else None
 
-	if not domain.startswith(('http://', 'https://')):
-		protocols = ['https://', 'http://']
-		base_domain = domain.rstrip('/')
+	# Parse domain and port
+	port = None
+	base_domain = domain.rstrip('/')
+	
+	# Handle URLs with existing protocol
+	if base_domain.startswith(('http://', 'https://')):
+		protocol = 'https://' if base_domain.startswith('https://') else 'http://'
+		base_domain = base_domain.split('://', 1)[1]
+		# Try to extract port from domain
+		if ':' in base_domain.split('/')[0]:
+			base_domain, port_str = base_domain.split(':', 1)
+			try:
+				port = int(port_str.split('/')[0])
+			except ValueError:
+				port = 443 if protocol == 'https://' else 80
+		else:
+			port = 443 if protocol == 'https://' else 80
+		protocols = [f'{protocol}{base_domain}{":" + str(port) if port else ""}']
 	else:
-		protocols = [domain]
-		base_domain = domain.split('://')[-1].split('/')[0].rstrip('/')
+		# No protocol specified - try HTTPS first, then HTTP
+		if ':' in base_domain.split('/')[0]:
+			base_domain, port_str = base_domain.split(':', 1)
+			try:
+				port = int(port_str.split('/')[0])
+			except ValueError:
+				port = 443  # Default to HTTPS port
+		protocols = [
+			f'https://{base_domain}{":" + str(port) if port else ""}',
+			f'http://{base_domain}{":" + str(port) if port else ""}'
+		]
 
 	result = {
 		'domain'         : base_domain,
@@ -323,7 +346,7 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 		'title'          : None,
 		'body'           : None,
 		'content_type'   : None,
-		'url'            : f'https://{base_domain}',
+		'url'            : protocols[0],  # Use first protocol as default URL
 		'ips'            : [],
 		'cname'          : None,
 		'nameservers'    : [],
@@ -345,15 +368,14 @@ async def check_domain(session: aiohttp.ClientSession, domain: str, follow_redir
 	if check_axfr:
 		await try_axfr(base_domain, ns_ips, timeout)
 
-	for protocol in protocols:
-		url = f'{protocol}{base_domain}'
+	for url in protocols:
 		try:
 			max_redirects = 10 if follow_redirects else 0
 			async with session.get(url, timeout=timeout, allow_redirects=follow_redirects, max_redirects=max_redirects) as response:
-				result['status']         = response.status
-				result['url']            = str(response.url)
-				result['headers']        = dict(response.headers)
-				result['content_type']   = response.headers.get('content-type', '').split(';')[0]
+				result['status'] = response.status
+				result['url'] = str(response.url)
+				result['headers'] = dict(response.headers)
+				result['content_type'] = response.headers.get('content-type', '').split(';')[0]
 				result['content_length'] = response.headers.get('content-length')
 				
 				# Track redirect chain
