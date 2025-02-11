@@ -19,7 +19,7 @@ A high-performance concurrent web scanner written in Python. HTTPZ efficiently s
 ### Via pip (recommended)
 ```bash
 # Install from PyPI
-pip install httpz
+pip install httpz-scanner
 
 # The 'httpz' command will now be available in your terminal
 httpz --help
@@ -39,39 +39,39 @@ pip install -r requirements.txt
 
 Basic usage:
 ```bash
-python -m httpz domains.txt
+python -m httpz-scanner domains.txt
 ```
 
 Scan with all flags enabled and output to JSONL:
 ```bash
-python -m httpz domains.txt -all -c 100 -o results.jsonl -j -p
+python -m httpz-scanner domains.txt -all -c 100 -o results.jsonl -j -p
 ```
 
 Read from stdin:
 ```bash
-cat domains.txt | python -m httpz - -all -c 100
-echo "example.com" | python -m httpz - -all
+cat domains.txt | python -m httpz-scanner - -all -c 100
+echo "example.com" | python -m httpz-scanner - -all
 ```
 
 Filter by status codes and follow redirects:
 ```bash
-httpz domains.txt -mc 200,301-399 -ec 404,500 -fr -p
+python -m httpz-scanner domains.txt -mc 200,301-399 -ec 404,500 -fr -p
 ```
 
 Show specific fields with custom timeout and resolvers:
 ```bash
-httpz domains.txt -sc -ti -i -tls -to 10 -r resolvers.txt
+python -m httpz-scanner domains.txt -sc -ti -i -tls -to 10 -r resolvers.txt
 ```
 
 Full scan with all options:
 ```bash
-httpz domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p -ax -r resolvers.txt
+python -m httpz-scanner domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p -ax -r resolvers.txt
 ```
 
 ### Python Library
 ```python
 import asyncio
-from httpz import HTTPZScanner
+from httpz_scanner import HTTPZScanner
 
 async def scan_domains():
     # Initialize scanner with all possible options (showing defaults)
@@ -193,20 +193,3 @@ The scanner will return results in this format:
 | `-p`        | `--progress`            | Show progress counter                               |
 | `-ax`       | `--axfr`               | Try AXFR transfer against nameservers               |
 | `-r FILE`   | `--resolvers FILE`     | File containing DNS resolvers *(one per line)*      |
-
-## Examples
-
-Scan domains with all flags enabled and output to JSONL:
-```bash
-python httpz.py domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p
-```
-
-Scan domains from stdin:
-```bash
-cat domains.txt | python httpz.py - -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p
-```
-
-Scan domains with custom resolvers and AXFR checks:
-```bash
-python httpz.py domains.txt -r resolvers.txt -ax -c 100 -o output.jsonl
-```
