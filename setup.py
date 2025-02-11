@@ -8,7 +8,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='httpz',
+    name='httpz-scanner',
     version='1.0.0',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
