@@ -9,7 +9,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='httpz-scanner',
-    version='1.0.3',
+    version='1.0.4',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',
@@ -39,4 +39,9 @@ setup(
         'dnspython>=2.1.0',
         'mmh3>=3.0.0',
     ],
+    entry_points={
+        'console_scripts': [
+            'httpz=httpz.__main__:main',  # This creates the 'httpz' command
+        ],
+    },
 ) 
