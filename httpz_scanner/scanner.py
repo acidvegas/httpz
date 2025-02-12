@@ -179,13 +179,6 @@ class HTTPZScanner:
         return result
 
 
-    async def process_result(self, result):
-        '''Process a scan result'''
-        if self.show_progress:
-            self.progress_count += 1
-            info(f'[{self.progress_count}] {format_console_output(result, self.debug_mode, self.show_fields, self.match_codes, self.exclude_codes)}')
-
-
     async def scan(self, input_source):
         '''
         Scan domains from a file, stdin, or async generator
@@ -203,6 +196,7 @@ class HTTPZScanner:
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             tasks = set()
+            count = 0  # Move counter here since that's all process_result was doing
             
             # Handle different input types
             if isinstance(input_source, str):
@@ -215,7 +209,8 @@ class HTTPZScanner:
                         )
                         for task in done:
                             result = await task
-                            await self.process_result(result)
+                            if self.show_progress:
+                                count += 1  # Increment counter here
                             yield result
 
                     task = asyncio.create_task(self.check_domain(session, domain))
@@ -231,7 +226,8 @@ class HTTPZScanner:
                                 )
                                 for task in done:
                                     result = await task
-                                    await self.process_result(result)
+                                    if self.show_progress:
+                                        count += 1
                                     yield result
 
                             task = asyncio.create_task(self.check_domain(session, domain))
@@ -252,7 +248,8 @@ class HTTPZScanner:
                                 )
                                 for task in done:
                                     result = await task
-                                    await self.process_result(result)
+                                    if self.show_progress:
+                                        count += 1
                                     yield result
 
                             task = asyncio.create_task(self.check_domain(session, domain))
@@ -264,5 +261,6 @@ class HTTPZScanner:
                 done, _ = await asyncio.wait(tasks)
                 for task in done:
                     result = await task
-                    await self.process_result(result)
+                    if self.show_progress:
+                        count += 1
                     yield result 

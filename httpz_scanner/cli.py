@@ -148,18 +148,23 @@ async def main():
             shard=args.shard
         )
 
-        # Run the scanner and handle output in ONE place
+        # Run the scanner and handle ALL output here
+        count = 0
         async for result in scanner.scan(args.file):
             # Write to output file if specified
             if args.output:
                 with open(args.output, 'a') as f:
                     f.write(json.dumps(result) + '\n')
             
-            # Print to console based on format
-            if args.jsonl:
-                print(json.dumps(result))
+            # Console output
+            if args.progress:
+                count += 1
+                info(f"[{count}] {format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes)}")
             else:
-                print(format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes))
+                if args.jsonl:
+                    print(json.dumps(result))
+                else:
+                    print(format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes))
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
