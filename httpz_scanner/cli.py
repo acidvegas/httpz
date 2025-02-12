@@ -82,6 +82,7 @@ async def main():
     parser.add_argument('-ec', '--exclude-codes', type=parse_status_codes, help='Exclude these status codes (comma-separated, e.g., 404,500)')
     parser.add_argument('-mc', '--match-codes', type=parse_status_codes, help='Only show these status codes (comma-separated, e.g., 200,301,404)')
     parser.add_argument('-p',  '--progress', action='store_true', help='Show progress counter')
+    parser.add_argument('-pd', '--post-data', help='Send POST request with this data')
     parser.add_argument('-r',  '--resolvers', help='File containing DNS resolvers (one per line)')
     parser.add_argument('-to', '--timeout', type=int, default=5, help='Request timeout in seconds')
     
@@ -93,7 +94,6 @@ async def main():
     
     # Add these arguments in the parser section
     parser.add_argument('-hd', '--headers', help='Custom headers to send with each request (format: "Header1: value1,Header2: value2")')
-    parser.add_argument('-p', '--post', help='Send POST request with this data')
     
     # If no arguments provided, print help and exit
     if len(sys.argv) == 1:
@@ -153,7 +153,7 @@ async def main():
             shard=args.shard,
             paths=args.paths.split(',') if args.paths else None,
             custom_headers=dict(h.split(': ', 1) for h in args.headers.split(',')) if args.headers else None,
-            post_data=args.post
+            post_data=args.post_data
         )
 
         count = 0
