@@ -197,7 +197,7 @@ class HTTPZScanner:
             self.resolvers = await load_resolvers(self.resolver_file)
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-            tasks = set()
+            tasks = {}  # Change to dict to track domain for each task
             domain_queue = asyncio.Queue()
             queue_empty = False
             
@@ -249,52 +249,44 @@ class HTTPZScanner:
             
             try:
                 while not queue_empty or tasks:
-                    # Fill up tasks to concurrent_limit
+                    # Start new tasks if needed
                     while len(tasks) < self.concurrent_limit and not queue_empty:
                         try:
                             domain = await domain_queue.get()
-                            if domain is None:  # Queue is empty
+                            if domain is None:
                                 queue_empty = True
                                 break
                             task = asyncio.create_task(process_domain(domain))
-                            tasks.add(task)
-                        except asyncio.CancelledError:
-                            break
+                            tasks[task] = domain
                         except Exception as e:
                             debug(f'Error creating task: {str(e)}')
                     
                     if not tasks:
                         break
-                    
-                    # Wait for any task to complete with timeout
+
+                    # Wait for the FIRST task to complete
                     try:
-                        done, pending = await asyncio.wait(
-                            tasks,
+                        done, _ = await asyncio.wait(
+                            tasks.keys(),
                             timeout=self.timeout,
                             return_when=asyncio.FIRST_COMPLETED
                         )
                         
-                        # Handle completed tasks
+                        # Process completed task immediately
                         for task in done:
-                            tasks.remove(task)
+                            domain = tasks.pop(task)
                             try:
                                 if result := await task:
                                     yield result
                             except Exception as e:
-                                debug(f'Error processing task result: {str(e)}')
-                        
-                        # Handle timed out tasks
-                        if not done and pending:
-                            for task in pending:
-                                task.cancel()
-                                try:
-                                    await task
-                                except asyncio.CancelledError:
-                                    pass
-                                tasks.remove(task)
-                                
+                                debug(f'Error processing result for {domain}: {str(e)}')
+                            
                     except Exception as e:
                         debug(f'Error in task processing loop: {str(e)}')
+                        # Remove any failed tasks
+                        failed_tasks = [t for t in tasks if t.done() and t.exception()]
+                        for task in failed_tasks:
+                            tasks.pop(task)
                     
             finally:
                 # Clean up
