@@ -78,7 +78,7 @@ async def test_list_input(domains):
     '''
     
     logging.info(f'{Colors.BOLD}Testing list input...{Colors.RESET}')
-    scanner = HTTPZScanner(concurrent_limit=20, timeout=3, show_progress=True, debug_mode=True)
+    scanner = HTTPZScanner(concurrent_limit=100, timeout=3, show_progress=True, debug_mode=True)
     
     count = 0
     async for result in scanner.scan(domains):
@@ -96,7 +96,7 @@ async def test_generator_input(domains):
     '''
     
     logging.info(f'{Colors.BOLD}Testing generator input...{Colors.RESET}')
-    scanner = HTTPZScanner(concurrent_limit=20, timeout=3, show_progress=True, debug_mode=True)
+    scanner = HTTPZScanner(concurrent_limit=100, timeout=3, show_progress=True, debug_mode=True)
     
     count = 0
     async for result in scanner.scan(domain_generator(domains)):
@@ -115,8 +115,8 @@ async def main() -> None:
         logging.info(f'Loaded {Colors.YELLOW}{len(domains)}{Colors.RESET} domains for testing')
         
         # Run tests
-        await test_list_input(domains)
         await test_generator_input(domains)
+        await test_list_input(domains)
         
         logging.info(f'{Colors.GREEN}All tests completed successfully!{Colors.RESET}')
         
