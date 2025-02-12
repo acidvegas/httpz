@@ -212,10 +212,10 @@ class HTTPZScanner:
                             tasks, return_when=asyncio.FIRST_COMPLETED
                         )
                         for task in done:
-                            result = await task
-                            if self.show_progress:
-                                count += 1  # Increment counter here
-                            yield result
+                            if result := await task:  # Only yield if result is not None
+                                if self.show_progress:
+                                    count += 1
+                                yield result
 
                     task = asyncio.create_task(self.check_domain(session, domain))
                     tasks.add(task)
@@ -229,10 +229,10 @@ class HTTPZScanner:
                                     tasks, return_when=asyncio.FIRST_COMPLETED
                                 )
                                 for task in done:
-                                    result = await task
-                                    if self.show_progress:
-                                        count += 1
-                                    yield result
+                                    if result := await task:  # Only yield if result is not None
+                                        if self.show_progress:
+                                            count += 1
+                                        yield result
 
                             task = asyncio.create_task(self.check_domain(session, domain))
                             tasks.add(task)
@@ -251,10 +251,10 @@ class HTTPZScanner:
                                     tasks, return_when=asyncio.FIRST_COMPLETED
                                 )
                                 for task in done:
-                                    result = await task
-                                    if self.show_progress:
-                                        count += 1
-                                    yield result
+                                    if result := await task:  # Only yield if result is not None
+                                        if self.show_progress:
+                                            count += 1
+                                        yield result
 
                             task = asyncio.create_task(self.check_domain(session, domain))
                             tasks.add(task)
@@ -264,7 +264,7 @@ class HTTPZScanner:
             if tasks:
                 done, _ = await asyncio.wait(tasks)
                 for task in done:
-                    result = await task
-                    if self.show_progress:
-                        count += 1
-                    yield result 
+                    if result := await task:  # Only yield if result is not None
+                        if self.show_progress:
+                            count += 1
+                        yield result 
