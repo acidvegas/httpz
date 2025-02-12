@@ -38,8 +38,16 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
             status = f"{Colors.RED}[{result['status']}]{Colors.RESET}"
         parts.append(status)
     
-    # Domain (always shown)
+    # Domain/URL
     parts.append(f"[{result['url']}]")
+    
+    # Content Type
+    if show_fields.get('content_type') and result.get('content_type'):
+        parts.append(f"{Colors.CYAN}[{result['content_type']}]{Colors.RESET}")
+    
+    # Content Length
+    if show_fields.get('content_length') and result.get('content_length'):
+        parts.append(f"{Colors.PINK}[{result['content_length']}]{Colors.RESET}")
     
     # Title
     if show_fields.get('title') and result.get('title'):
@@ -60,8 +68,8 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
         parts.append(f"{Colors.PURPLE}[{result['favicon_hash']}]{Colors.RESET}")
 
     # Headers
-    if show_fields.get('headers') and result.get('headers'):
-        headers_text = [f"{k}: {v}" for k, v in result['headers'].items()]
+    if show_fields.get('headers') and result.get('response_headers'):
+        headers_text = [f"{k}: {v}" for k, v in result['response_headers'].items()]
         parts.append(f"{Colors.CYAN}[{', '.join(headers_text)}]{Colors.RESET}")
     else:
         if show_fields.get('content_type') and result.get('content_type'):
@@ -73,18 +81,18 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
                 parts.append(f"{Colors.PINK}[{size}]{Colors.RESET}")
             except (ValueError, TypeError):
                 parts.append(f"{Colors.PINK}[{result['content_length']}]{Colors.RESET}")
-    
-    # CNAME
-    if show_fields.get('cname') and result.get('cname'):
-        parts.append(f"{Colors.PURPLE}[CNAME: {result['cname']}]{Colors.RESET}")
-    
+
     # Redirect Chain
     if show_fields.get('follow_redirects') and result.get('redirect_chain'):
         chain = ' -> '.join(result['redirect_chain'])
         parts.append(f"{Colors.YELLOW}[Redirects: {chain}]{Colors.RESET}")
 
+    # CNAME
+    if show_fields.get('cname') and result.get('cname'):
+        parts.append(f"{Colors.PURPLE}[CNAME: {result['cname']}]{Colors.RESET}")
+    
     # TLS Certificate Info
-    if result.get('tls'):
+    if show_fields.get('tls') and result.get('tls'):
         cert = result['tls']
         tls_parts = []
         if cert.get('common_name'):
