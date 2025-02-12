@@ -4,12 +4,13 @@
 
 from setuptools import setup, find_packages
 
+
 with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
     name='httpz_scanner',
-    version='2.0.0',
+    version='2.0.1',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',

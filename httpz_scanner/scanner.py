@@ -5,7 +5,6 @@
 import asyncio
 import json
 import random
-import sys
 
 try:
     import aiohttp
@@ -20,7 +19,7 @@ except ImportError:
 from .dns        import resolve_all_dns, load_resolvers
 from .formatters import format_console_output
 from .colors     import Colors
-from .parsers    import parse_domain_url, get_cert_info, get_favicon_hash
+from .parsers    import parse_domain_url, get_cert_info, get_favicon_hash, parse_title
 from .utils      import debug, info, USER_AGENTS, input_generator
 
 
@@ -154,12 +153,13 @@ class HTTPZScanner:
                         except AttributeError:
                             debug(f'Failed to get SSL info for {url}')
 
-                    html = (await response.text())[:1024*1024]
-                    soup = bs4.BeautifulSoup(html, 'html.parser')
+                    content_type = response.headers.get('Content-Type', '')
+                    html = await response.text() if any(x in content_type.lower() for x in ['text/html', 'application/xhtml']) else None
                     
                     # Only add title if it exists
-                    if soup.title and soup.title.string:
-                        result['title'] = ' '.join(soup.title.string.strip().split()).rstrip('.')[:300]
+                    if soup := bs4.BeautifulSoup(html, 'html.parser'):
+                        if soup.title and soup.title.string:
+                            result['title'] = ' '.join(soup.title.string.strip().split()).rstrip('.')[:300]
                     
                     # Only add body if it exists
                     if body_text := soup.get_text():
@@ -210,32 +210,81 @@ class HTTPZScanner:
 
     async def scan(self, input_source):
         '''
-        Scan domains from a file or stdin
+        Scan domains from a file, stdin, or async generator
         
-        :param input_source: Path to file or '-' for stdin
+        :param input_source: Can be:
+            - Path to file (str)
+            - stdin ('-')
+            - List/tuple of domains
+            - Async generator yielding domains
+        :yields: Result dictionary for each domain scanned
         '''
+        
         if not self.resolvers:
             await self.init()
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             tasks = set()
             
-            # Pass shard info to input_generator
-            for domain in input_generator(input_source, self.shard):
-                if len(tasks) >= self.concurrent_limit:
-                    done, tasks = await asyncio.wait(
-                        tasks, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for task in done:
-                        result = await task
-                        await self.process_result(result)
+            # Handle different input types
+            if isinstance(input_source, str):
+                # File or stdin input
+                domain_iter = input_generator(input_source, self.shard)
+                for domain in domain_iter:
+                    if len(tasks) >= self.concurrent_limit:
+                        done, tasks = await asyncio.wait(
+                            tasks, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in done:
+                            result = await task
+                            await self.process_result(result)
+                            yield result
 
-                task = asyncio.create_task(self.check_domain(session, domain))
-                tasks.add(task)
+                    task = asyncio.create_task(self.check_domain(session, domain))
+                    tasks.add(task)
+            elif isinstance(input_source, (list, tuple)):
+                # List/tuple input
+                for line_num, domain in enumerate(input_source):
+                    if domain := str(domain).strip():
+                        if self.shard is None or line_num % self.shard[1] == self.shard[0]:
+                            if len(tasks) >= self.concurrent_limit:
+                                done, tasks = await asyncio.wait(
+                                    tasks, return_when=asyncio.FIRST_COMPLETED
+                                )
+                                for task in done:
+                                    result = await task
+                                    await self.process_result(result)
+                                    yield result
+
+                            task = asyncio.create_task(self.check_domain(session, domain))
+                            tasks.add(task)
+            else:
+                # Async generator input
+                line_num = 0
+                async for domain in input_source:
+                    if isinstance(domain, bytes):
+                        domain = domain.decode()
+                    domain = domain.strip()
+                    
+                    if domain:
+                        if self.shard is None or line_num % self.shard[1] == self.shard[0]:
+                            if len(tasks) >= self.concurrent_limit:
+                                done, tasks = await asyncio.wait(
+                                    tasks, return_when=asyncio.FIRST_COMPLETED
+                                )
+                                for task in done:
+                                    result = await task
+                                    await self.process_result(result)
+                                    yield result
+
+                            task = asyncio.create_task(self.check_domain(session, domain))
+                            tasks.add(task)
+                        line_num += 1
 
             # Process remaining tasks
             if tasks:
                 done, _ = await asyncio.wait(tasks)
                 for task in done:
                     result = await task
-                    await self.process_result(result) 
+                    await self.process_result(result)
+                    yield result 

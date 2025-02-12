@@ -8,9 +8,9 @@ except ImportError:
     raise ImportError('missing bs4 module (pip install beautifulsoup4)')
 
 try:
-    from cryptography import x509
+    from cryptography                   import x509
     from cryptography.hazmat.primitives import hashes
-    from cryptography.x509.oid import NameOID
+    from cryptography.x509.oid          import NameOID
 except ImportError:
     raise ImportError('missing cryptography module (pip install cryptography)')
 
@@ -28,8 +28,8 @@ def parse_domain_url(domain: str) -> tuple:
     Parse domain string into base domain, port, and protocol list
     
     :param domain: Raw domain string to parse
-    :return: Tuple of (base_domain, port, protocols)
     '''
+
     port = None
     base_domain = domain.rstrip('/')
     
@@ -58,6 +58,7 @@ def parse_domain_url(domain: str) -> tuple:
     
     return base_domain, port, protocols
 
+
 async def get_cert_info(ssl_object, url: str) -> dict:
     '''
     Get SSL certificate information for a domain
@@ -65,6 +66,7 @@ async def get_cert_info(ssl_object, url: str) -> dict:
     :param ssl_object: SSL object to get certificate info from
     :param url: URL to get certificate info from
     '''
+
     try:            
         if not ssl_object or not (cert_der := ssl_object.getpeercert(binary_form=True)):
             return None
@@ -100,6 +102,7 @@ async def get_cert_info(ssl_object, url: str) -> dict:
     except Exception as e:
         error(f'Error getting cert info for {url}: {str(e)}')
         return None
+
 
 async def get_favicon_hash(session, base_url: str, html: str) -> str:
     '''
@@ -141,6 +144,7 @@ async def get_favicon_hash(session, base_url: str, html: str) -> str:
     
     return None 
 
+
 def parse_status_codes(codes_str: str) -> set:
     '''
     Parse comma-separated status codes and ranges into a set of integers
@@ -175,3 +179,25 @@ def parse_shard(shard_str: str) -> tuple:
         return shard_index - 1, total_shards  # Convert to 0-based index
     except (ValueError, TypeError):
         raise argparse.ArgumentTypeError('Shard must be in format INDEX/TOTAL where INDEX <= TOTAL') 
+
+
+def parse_title(html: str, content_type: str = None) -> str:
+    '''
+    Parse title from HTML content
+    
+    :param html: HTML content of the page
+    :param content_type: Content-Type header value
+    '''
+    
+    # Only parse title for HTML content
+    if content_type and not any(x in content_type.lower() for x in ['text/html', 'application/xhtml']):
+        return None
+        
+    try:
+        soup = bs4.BeautifulSoup(html, 'html.parser', from_encoding='utf-8', features='lxml')
+        if title := soup.title:
+            return title.string.strip()
+    except:
+        pass
+    
+    return None 

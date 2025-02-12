@@ -92,14 +92,29 @@ This allows efficient distribution of large scans across multiple machines.
 ### Python Library
 ```python
 import asyncio
-import aiohttp
-import aioboto3
+import urllib.request
 from httpz_scanner import HTTPZScanner
 
-async def scan_domains():
+async def scan_from_list() -> list:
+    with urllib.request.urlopen('https://example.com/domains.txt') as response:
+        content = response.read().decode()
+        return [line.strip() for line in content.splitlines() if line.strip()][:20]
+    
+async def scan_from_url():
+    with urllib.request.urlopen('https://example.com/domains.txt') as response:
+        for line in response:
+            if line := line.strip():
+                yield line.decode().strip()
+
+async def scan_from_file():
+    with open('domains.txt', 'r') as file:
+        for line in file:
+            if line := line.strip():
+                yield line
+
+async def main():
     # Initialize scanner with all possible options (showing defaults)
     scanner = HTTPZScanner(
-        # Core settings
         concurrent_limit=100,   # Number of concurrent requests
         timeout=5,              # Request timeout in seconds
         follow_redirects=False, # Follow redirects (max 10)
@@ -131,61 +146,33 @@ async def scan_domains():
         exclude_codes={404,500,503} # Exclude these status codes
     )
 
-    # Initialize resolvers (required before scanning)
-    await scanner.init()
+    # Example 1: Process file
+    print('\nProcessing file:')
+    async for result in scanner.scan(scan_from_file()):
+        print(f"{result['domain']}: {result['status']}")
 
-    # Example 1: Stream from S3/MinIO using aioboto3
-    async with aioboto3.Session().client('s3', 
-            endpoint_url='http://minio.example.com:9000',
-            aws_access_key_id='access_key',
-            aws_secret_access_key='secret_key') as s3:
-        
-        response = await s3.get_object(Bucket='my-bucket', Key='huge-domains.txt')
-        async with response['Body'] as stream:
-            async def s3_generator():
-                while True:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    yield line.decode().strip()
-            
-            await scanner.scan(s3_generator())
+    # Example 2: Stream URLs
+    print('\nStreaming URLs:')
+    async for result in scanner.scan(scan_from_url()):
+        print(f"{result['domain']}: {result['status']}")
 
-    # Example 2: Stream from URL using aiohttp
-    async with aiohttp.ClientSession() as session:
-        # For large files - stream line by line
-        async with session.get('https://example.com/huge-domains.txt') as resp:
-            async def url_generator():
-                async for line in resp.content:
-                    yield line.decode().strip()
-            
-            await scanner.scan(url_generator())
-        
-        # For small files - read all at once
-        async with session.get('https://example.com/small-domains.txt') as resp:
-            content = await resp.text()
-            await scanner.scan(content)  # Library handles splitting into lines
-
-    # Example 3: Simple list of domains
-    domains = [
-        'example1.com',
-        'example2.com',
-        'example3.com'
-    ]
-    await scanner.scan(domains)
+    # Example 3: Process list
+    print('\nProcessing list:')
+    domains = await scan_from_list()
+    async for result in scanner.scan(domains):
+        print(f"{result['domain']}: {result['status']}")
 
 if __name__ == '__main__':
-    asyncio.run(scan_domains())
+    asyncio.run(main())
 ```
 
 The scanner accepts various input types:
-- Async/sync generators that yield domains
-- String content with newlines
+- File paths (string)
 - Lists/tuples of domains
-- File paths
 - stdin (using '-')
+- Async generators that yield domains
 
-All inputs support sharding for distributed scanning.
+All inputs support sharding for distributed scanning using the `shard` parameter.
 
 ## Arguments
 
