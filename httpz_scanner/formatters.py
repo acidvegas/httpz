@@ -41,6 +41,20 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
     # Domain/URL
     parts.append(f"[{result['url']}]")
     
+    # IPs (moved up for visibility)
+    if show_fields.get('ip') and result.get('ips'):
+        ips_text = ', '.join(result['ips'])
+        parts.append(f"{Colors.YELLOW}[{ips_text}]{Colors.RESET}")
+
+    # Title (moved up for visibility) 
+    if show_fields.get('title') and result.get('title'):
+        parts.append(f"{Colors.DARK_GREEN}[{result['title']}]{Colors.RESET}")
+
+    # Body preview (moved up for visibility)
+    if show_fields.get('body') and result.get('body'):
+        body = result['body'][:100].replace('\n', ' ') + ('...' if len(result['body']) > 100 else '')
+        parts.append(f"{Colors.BLUE}[{body}]{Colors.RESET}")
+    
     # Content Type
     if show_fields.get('content_type') and result.get('content_type'):
         parts.append(f"{Colors.CYAN}[{result['content_type']}]{Colors.RESET}")
@@ -48,20 +62,6 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
     # Content Length
     if show_fields.get('content_length') and result.get('content_length'):
         parts.append(f"{Colors.PINK}[{result['content_length']}]{Colors.RESET}")
-    
-    # Title
-    if show_fields.get('title') and result.get('title'):
-        parts.append(f"{Colors.DARK_GREEN}[{result['title']}]{Colors.RESET}")
-    
-    # Body preview
-    if show_fields.get('body') and result.get('body'):
-        body = result['body'][:100] + ('...' if len(result['body']) > 100 else '')
-        parts.append(f"{Colors.BLUE}[{body}]{Colors.RESET}")
-    
-    # IPs
-    if show_fields.get('ip') and result.get('ips'):
-        ips_text = ', '.join(result['ips'])
-        parts.append(f"{Colors.YELLOW}[{ips_text}]{Colors.RESET}")
 
     # Favicon hash
     if show_fields.get('favicon') and result.get('favicon_hash'):
@@ -71,16 +71,6 @@ def format_console_output(result: dict, debug: bool = False, show_fields: dict =
     if show_fields.get('headers') and result.get('response_headers'):
         headers_text = [f"{k}: {v}" for k, v in result['response_headers'].items()]
         parts.append(f"{Colors.CYAN}[{', '.join(headers_text)}]{Colors.RESET}")
-    else:
-        if show_fields.get('content_type') and result.get('content_type'):
-            parts.append(f"{Colors.HEADER}[{result['content_type']}]{Colors.RESET}")
-        
-        if show_fields.get('content_length') and result.get('content_length'):
-            try:
-                size = human_size(int(result['content_length']))
-                parts.append(f"{Colors.PINK}[{size}]{Colors.RESET}")
-            except (ValueError, TypeError):
-                parts.append(f"{Colors.PINK}[{result['content_length']}]{Colors.RESET}")
 
     # Redirect Chain
     if show_fields.get('follow_redirects') and result.get('redirect_chain'):

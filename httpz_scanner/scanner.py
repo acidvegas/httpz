@@ -112,24 +112,67 @@ class HTTPZScanner:
             debug(f'Making request to {url} with headers: {headers}')
             async with session.request('GET', url, 
                 timeout=self.timeout,
-                allow_redirects=True,  # Always follow redirects
+                allow_redirects=True,
                 max_redirects=10,
-                ssl=False,  # Don't verify SSL
+                ssl=False,
                 headers=headers) as response:
                 
                 debug(f'Got response from {url}: status={response.status}, headers={dict(response.headers)}')
                 
+                # Get domain and parse URL
+                parsed_url = urllib.parse.urlparse(url)
+                domain = parsed_url.hostname
+                
+                # Basic result structure
                 result = {
-                    'domain': urllib.parse.urlparse(url).hostname,
+                    'domain': domain,
                     'status': response.status,
                     'url': str(response.url),
-                    'response_headers': dict(response.headers)
+                    'response_headers': dict(response.headers),
+                    'protocol': parsed_url.scheme
                 }
-                
-                if response.history:
-                    result['redirect_chain'] = [str(h.url) for h in response.history] + [str(response.url)]
-                    debug(f'Redirect chain for {url}: {result["redirect_chain"]}')
-                
+
+                try:
+                    # Get response body
+                    body = await response.text()
+                    result['body'] = body[:500]  # Limit body preview
+                    
+                    # Parse title using bs4
+                    if 'text/html' in response.headers.get('content-type', '').lower():
+                        soup = bs4.BeautifulSoup(body, 'html.parser')
+                        if title_tag := soup.title:
+                            result['title'] = title_tag.string.strip()
+
+                    # Get content type and length
+                    result['content_type'] = response.headers.get('content-type')
+                    result['content_length'] = response.headers.get('content-length')
+
+                    # Get redirect chain
+                    if response.history:
+                        result['redirect_chain'] = [str(h.url) for h in response.history] + [str(response.url)]
+
+                    # Get DNS info
+                    if self.show_fields.get('ip') or self.show_fields.get('cname'):
+                        ips, cname, _, _ = await resolve_all_dns(domain)
+                        if ips:
+                            result['ips'] = ips
+                        if cname:
+                            result['cname'] = cname
+
+                    # Get TLS info for HTTPS
+                    if url.startswith('https://') and self.show_fields.get('tls'):
+                        if cert_info := await get_cert_info(response.connection.transport.get_extra_info('ssl_object'), url):
+                            result['tls'] = cert_info
+
+                    # Get favicon hash if requested
+                    if self.show_fields.get('favicon'):
+                        if favicon_hash := await get_favicon_hash(session, f"{parsed_url.scheme}://{domain}", body):
+                            result['favicon_hash'] = favicon_hash
+
+                except Exception as e:
+                    debug(f'Error processing response data for {url}: {str(e)}')
+                    # Still return basic result even if additional processing fails
+                    
                 return result
                 
         except aiohttp.ClientSSLError as e:
