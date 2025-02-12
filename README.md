@@ -16,7 +16,7 @@ A high-performance concurrent web scanner written in Python. HTTPZ efficiently s
 
 ## Installation
 
-### Via pip (recommended)
+### Via pip *(recommended)*
 ```bash
 # Install from PyPI
 pip install httpz_scanner
@@ -68,104 +68,136 @@ Full scan with all options:
 python -m httpz_scanner domains.txt -c 100 -o output.jsonl -j -all -to 10 -mc 200,301 -ec 404,500 -p -ax -r resolvers.txt
 ```
 
+### Distributed Scanning
+Split scanning across multiple machines using the `--shard` argument:
+
+```bash
+# Machine 1
+httpz domains.txt --shard 1/3
+
+# Machine 2
+httpz domains.txt --shard 2/3
+
+# Machine 3
+httpz domains.txt --shard 3/3
+```
+
+Each machine will process a different subset of domains without overlap. For example, with 3 shards:
+- Machine 1 processes lines 0,3,6,9,...
+- Machine 2 processes lines 1,4,7,10,...
+- Machine 3 processes lines 2,5,8,11,...
+
+This allows efficient distribution of large scans across multiple machines.
+
 ### Python Library
 ```python
 import asyncio
+import aiohttp
+import aioboto3
 from httpz_scanner import HTTPZScanner
 
 async def scan_domains():
     # Initialize scanner with all possible options (showing defaults)
     scanner = HTTPZScanner(
         # Core settings
-        concurrent_limit=100,    # Number of concurrent requests
+        concurrent_limit=100,   # Number of concurrent requests
         timeout=5,              # Request timeout in seconds
-        follow_redirects=False,  # Follow redirects (max 10)
+        follow_redirects=False, # Follow redirects (max 10)
         check_axfr=False,       # Try AXFR transfer against nameservers
         resolver_file=None,     # Path to custom DNS resolvers file
         output_file=None,       # Path to JSONL output file
         show_progress=False,    # Show progress counter
         debug_mode=False,       # Show error states and debug info
         jsonl_output=False,     # Output in JSONL format
+        shard=None,             # Tuple of (shard_index, total_shards) for distributed scanning
         
         # Control which fields to show (all False by default unless show_fields is None)
         show_fields={
-            'status_code': True,       # Show status code
-            'content_type': True,      # Show content type
-            'content_length': True,    # Show content length
+            'status_code': True,      # Show status code
+            'content_type': True,     # Show content type
+            'content_length': True,   # Show content length
             'title': True,            # Show page title
             'body': True,             # Show body preview
             'ip': True,               # Show IP addresses
             'favicon': True,          # Show favicon hash
             'headers': True,          # Show response headers
-            'follow_redirects': True,  # Show redirect chain
+            'follow_redirects': True, # Show redirect chain
             'cname': True,            # Show CNAME records
             'tls': True               # Show TLS certificate info
         },
         
         # Filter results
-        match_codes={200, 301, 302},    # Only show these status codes
-        exclude_codes={404, 500, 503}   # Exclude these status codes
+        match_codes={200,301,302},  # Only show these status codes
+        exclude_codes={404,500,503} # Exclude these status codes
     )
 
     # Initialize resolvers (required before scanning)
     await scanner.init()
 
-    # Scan domains from file
-    await scanner.scan('domains.txt')
-    
-    # Or scan from stdin
-    await scanner.scan('-')
+    # Example 1: Stream from S3/MinIO using aioboto3
+    async with aioboto3.Session().client('s3', 
+            endpoint_url='http://minio.example.com:9000',
+            aws_access_key_id='access_key',
+            aws_secret_access_key='secret_key') as s3:
+        
+        response = await s3.get_object(Bucket='my-bucket', Key='huge-domains.txt')
+        async with response['Body'] as stream:
+            async def s3_generator():
+                while True:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    yield line.decode().strip()
+            
+            await scanner.scan(s3_generator())
+
+    # Example 2: Stream from URL using aiohttp
+    async with aiohttp.ClientSession() as session:
+        # For large files - stream line by line
+        async with session.get('https://example.com/huge-domains.txt') as resp:
+            async def url_generator():
+                async for line in resp.content:
+                    yield line.decode().strip()
+            
+            await scanner.scan(url_generator())
+        
+        # For small files - read all at once
+        async with session.get('https://example.com/small-domains.txt') as resp:
+            content = await resp.text()
+            await scanner.scan(content)  # Library handles splitting into lines
+
+    # Example 3: Simple list of domains
+    domains = [
+        'example1.com',
+        'example2.com',
+        'example3.com'
+    ]
+    await scanner.scan(domains)
 
 if __name__ == '__main__':
     asyncio.run(scan_domains())
 ```
 
-The scanner will return results in this format:
-```python
-{
-    'domain': 'example.com',           # Base domain
-    'url': 'https://example.com',      # Full URL
-    'status': 200,                     # HTTP status code
-    'port': 443,                       # Port number
-    'title': 'Example Domain',         # Page title
-    'body': 'Example body text...',    # Body preview
-    'content_type': 'text/html',       # Content type
-    'content_length': '12345',         # Content length
-    'ips': ['93.184.216.34'],         # IP addresses
-    'cname': 'cdn.example.com',        # CNAME record
-    'nameservers': ['ns1.example.com'],# Nameservers
-    'favicon_hash': '123456789',       # Favicon hash
-    'headers': {                       # Response headers
-        'Server': 'nginx',
-        'Content-Type': 'text/html'
-    },
-    'redirect_chain': [               # Redirect history
-        'http://example.com',
-        'https://example.com'
-    ],
-    'tls': {                         # TLS certificate info
-        'fingerprint': 'sha256...',
-        'common_name': 'example.com',
-        'issuer': 'Let\'s Encrypt',
-        'alt_names': ['www.example.com'],
-        'not_before': '2023-01-01T00:00:00',
-        'not_after': '2024-01-01T00:00:00',
-        'version': 3,
-        'serial_number': 'abcdef1234'
-    }
-}
-```
+The scanner accepts various input types:
+- Async/sync generators that yield domains
+- String content with newlines
+- Lists/tuples of domains
+- File paths
+- stdin (using '-')
+
+All inputs support sharding for distributed scanning.
 
 ## Arguments
 
-| Argument  | Long Form        | Description                                                 |
-|-----------|------------------|-------------------------------------------------------------|
-| `file`    | -                | File containing domains *(one per line)*, use `-` for stdin |
-| `-d`      | `--debug`        | Show error states and debug information                     |
-| `-c N`    | `--concurrent N` | Number of concurrent checks *(default: 100)*                |
-| `-o FILE` | `--output FILE`  | Output file path *(JSONL format)*                           |
-| `-j`      | `--jsonl`        | Output JSON Lines format to console                         |
-| `-all`    | `--all-flags`    | Enable all output flags                                     |
+| Argument      | Long Form        | Description                                                 |
+|---------------|------------------|-------------------------------------------------------------|
+| `file`        |                  | File containing domains *(one per line)*, use `-` for stdin |
+| `-d`          | `--debug`        | Show error states and debug information                     |
+| `-c N`        | `--concurrent N` | Number of concurrent checks *(default: 100)*                |
+| `-o FILE`     | `--output FILE`  | Output file path *(JSONL format)*                           |
+| `-j`          | `--jsonl`        | Output JSON Lines format to console                         |
+| `-all`        | `--all-flags`    | Enable all output flags                                     |
+| `-sh`         | `--shard N/T`    | Process shard N of T total shards *(e.g., 1/3)*             |
 
 ### Output Field Flags
 
@@ -191,5 +223,5 @@ The scanner will return results in this format:
 | `-mc CODES` | `--match-codes CODES`   | Only show specific status codes *(comma-separated)* |
 | `-ec CODES` | `--exclude-codes CODES` | Exclude specific status codes *(comma-separated)*   |
 | `-p`        | `--progress`            | Show progress counter                               |
-| `-ax`       | `--axfr`               | Try AXFR transfer against nameservers               |
-| `-r FILE`   | `--resolvers FILE`     | File containing DNS resolvers *(one per line)*      |
+| `-ax`       | `--axfr`                | Try AXFR transfer against nameservers               |
+| `-r FILE`   | `--resolvers FILE`      | File containing DNS resolvers *(one per line)*      |

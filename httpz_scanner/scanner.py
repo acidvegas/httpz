@@ -27,7 +27,7 @@ from .utils      import debug, info, USER_AGENTS, input_generator
 class HTTPZScanner:
     '''Core scanner class for HTTP domain checking'''
     
-    def __init__(self, concurrent_limit = 100, timeout = 5, follow_redirects = False, check_axfr = False, resolver_file = None, output_file = None, show_progress = False, debug_mode = False, jsonl_output = False, show_fields = None, match_codes = None, exclude_codes = None):
+    def __init__(self, concurrent_limit = 100, timeout = 5, follow_redirects = False, check_axfr = False, resolver_file = None, output_file = None, show_progress = False, debug_mode = False, jsonl_output = False, show_fields = None, match_codes = None, exclude_codes = None, shard = None):
         '''
         Initialize the HTTPZScanner class
         
@@ -43,6 +43,7 @@ class HTTPZScanner:
         :param show_fields: Fields to show
         :param match_codes: Status codes to match
         :param exclude_codes: Status codes to exclude
+        :param shard: Tuple of (shard_index, total_shards) for distributed scanning
         '''
 
         self.concurrent_limit = concurrent_limit
@@ -54,6 +55,7 @@ class HTTPZScanner:
         self.show_progress    = show_progress
         self.debug_mode       = debug_mode
         self.jsonl_output     = jsonl_output
+        self.shard            = shard
 
         self.show_fields = show_fields or {
             'status_code'      : True,
@@ -218,8 +220,8 @@ class HTTPZScanner:
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             tasks = set()
             
-            # Process domains with concurrent limit
-            for domain in input_generator(input_source):
+            # Pass shard info to input_generator
+            for domain in input_generator(input_source, self.shard):
                 if len(tasks) >= self.concurrent_limit:
                     done, tasks = await asyncio.wait(
                         tasks, return_when=asyncio.FIRST_COMPLETED

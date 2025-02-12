@@ -3,6 +3,7 @@
 # httpz_scanner/utils.py
 
 import logging
+import os
 import sys
 
 
@@ -97,19 +98,54 @@ def human_size(size_bytes: int) -> str:
     return f'{size:.1f}{units[unit_index]}'
 
 
-def input_generator(input_source: str):
+def input_generator(input_source, shard: tuple = None):
     '''
-    Generator function to yield domains from file or stdin
+    Generator function to yield domains from various input sources with optional sharding
     
-    :param input_source: file or stdin
+    :param input_source: Can be:
+        - string path to local file
+        - "-" for stdin
+        - list/tuple of domains
+        - generator/iterator yielding domains
+        - string content with newlines
+    :param shard: Tuple of (shard_index, total_shards) for distributed scanning
     '''
     
+    line_num = 0
+    
+    # Handle stdin
     if input_source == '-' or input_source is None:
         for line in sys.stdin:
-            if line.strip():
-                yield line.strip()
-    else:
+            if line := line.strip():
+                if shard is None or line_num % shard[1] == shard[0]:
+                    yield line
+            line_num += 1
+            
+    # Handle local files
+    elif isinstance(input_source, str) and os.path.exists(input_source):
         with open(input_source, 'r') as f:
             for line in f:
-                if line.strip():
-                    yield line.strip() 
+                if line := line.strip():
+                    if shard is None or line_num % shard[1] == shard[0]:
+                        yield line
+                line_num += 1
+                
+    # Handle iterables (generators, lists, etc)
+    elif hasattr(input_source, '__iter__') and not isinstance(input_source, (str, bytes)):
+        for line in input_source:
+            if isinstance(line, bytes):
+                line = line.decode()
+            if line := line.strip():
+                if shard is None or line_num % shard[1] == shard[0]:
+                    yield line
+            line_num += 1
+            
+    # Handle string content with newlines
+    elif isinstance(input_source, (str, bytes)):
+        if isinstance(input_source, bytes):
+            input_source = input_source.decode()
+        for line in input_source.splitlines():
+            if line := line.strip():
+                if shard is None or line_num % shard[1] == shard[0]:
+                    yield line
+            line_num += 1

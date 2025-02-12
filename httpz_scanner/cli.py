@@ -11,6 +11,7 @@ import sys
 from .colors  import Colors
 from .scanner import HTTPZScanner
 from .utils   import SILENT_MODE, info
+from .parsers import parse_status_codes, parse_shard
 
 def setup_logging(level='INFO', log_to_disk=False):
     '''
@@ -49,25 +50,6 @@ def setup_logging(level='INFO', log_to_disk=False):
         handlers=handlers
     )
 
-def parse_status_codes(codes_str: str) -> set:
-    '''
-    Parse comma-separated status codes and ranges into a set of integers
-    
-    :param codes_str: Comma-separated status codes (e.g., "200,301-399,404,500-503")
-    '''
-    
-    codes = set()
-    try:
-        for part in codes_str.split(','):
-            if '-' in part:
-                start, end = map(int, part.split('-'))
-                codes.update(range(start, end + 1))
-            else:
-                codes.add(int(part))
-        return codes
-    except ValueError:
-        raise argparse.ArgumentTypeError('Invalid status code format. Use comma-separated numbers or ranges (e.g., 200,301-399,404,500-503)')
-
 async def main():
     parser = argparse.ArgumentParser(
         description=f'{Colors.GREEN}Hyper-fast HTTP Scraping Tool{Colors.RESET}',
@@ -102,6 +84,9 @@ async def main():
     parser.add_argument('-p', '--progress', action='store_true', help='Show progress counter')
     parser.add_argument('-r', '--resolvers', help='File containing DNS resolvers (one per line)')
     parser.add_argument('-to', '--timeout', type=int, default=5, help='Request timeout in seconds')
+    
+    # Add shard argument
+    parser.add_argument('-sh','--shard', type=parse_shard, help='Shard index and total shards (e.g., 1/3)')
     
     # If no arguments provided, print help and exit
     if len(sys.argv) == 1:
@@ -158,7 +143,8 @@ async def main():
             jsonl_output=args.jsonl,
             show_fields=show_fields,
             match_codes=args.match_codes,
-            exclude_codes=args.exclude_codes
+            exclude_codes=args.exclude_codes,
+            shard=args.shard
         )
 
         # Run the scanner with file/stdin input

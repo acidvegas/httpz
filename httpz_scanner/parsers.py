@@ -20,6 +20,7 @@ except ImportError:
     raise ImportError('missing mmh3 module (pip install mmh3)')
 
 from .utils import debug, error
+import argparse
 
 
 def parse_domain_url(domain: str) -> tuple:
@@ -108,6 +109,7 @@ async def get_favicon_hash(session, base_url: str, html: str) -> str:
     :param base_url: base URL of the website
     :param html: HTML content of the page
     '''
+
     try:
         soup = bs4.BeautifulSoup(html, 'html.parser')
         
@@ -138,3 +140,38 @@ async def get_favicon_hash(session, base_url: str, html: str) -> str:
         debug(f'Error getting favicon for {base_url}: {str(e)}')
     
     return None 
+
+def parse_status_codes(codes_str: str) -> set:
+    '''
+    Parse comma-separated status codes and ranges into a set of integers
+    
+    :param codes_str: Comma-separated status codes (e.g., "200,301-399,404,500-503")
+    '''
+    
+    codes = set()
+    try:
+        for part in codes_str.split(','):
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                codes.update(range(start, end + 1))
+            else:
+                codes.add(int(part))
+        return codes
+    except ValueError:
+        raise argparse.ArgumentTypeError('Invalid status code format. Use comma-separated numbers or ranges (e.g., 200,301-399,404,500-503)')
+
+
+def parse_shard(shard_str: str) -> tuple:
+    '''
+    Parse shard argument in format INDEX/TOTAL
+    
+    :param shard_str: Shard string in format "INDEX/TOTAL"
+    '''
+
+    try:
+        shard_index, total_shards = map(int, shard_str.split('/'))
+        if shard_index < 1 or total_shards < 1 or shard_index > total_shards:
+            raise ValueError
+        return shard_index - 1, total_shards  # Convert to 0-based index
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError('Shard must be in format INDEX/TOTAL where INDEX <= TOTAL') 
