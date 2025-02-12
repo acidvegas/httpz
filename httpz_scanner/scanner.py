@@ -107,6 +107,10 @@ class HTTPZScanner:
                     
                     result['status'] = response.status
                     
+                    # Bail immediately if it's a failed lookup - no point processing further
+                    if result['status'] == -1:
+                        return None
+
                     # Early exit if status code doesn't match criteria
                     if self.match_codes and result['status'] not in self.match_codes:
                         return result
