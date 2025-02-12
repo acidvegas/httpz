@@ -177,10 +177,10 @@ class HTTPZScanner:
                     break
             except Exception as e:
                 debug(f'Error checking {url}: {str(e)}')
-                result['status'] = -1
-                continue
+                continue  # Just continue to next protocol without setting status = -1
 
-        return result
+        # Return None if we never got a valid status
+        return None if result['status'] == 0 else result
 
 
     async def scan(self, input_source):

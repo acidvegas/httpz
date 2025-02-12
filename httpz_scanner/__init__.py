@@ -6,4 +6,4 @@ from .scanner import HTTPZScanner
 from .colors  import Colors
 
 
-__version__ = '2.0.8'
+__version__ = '2.0.9'
