@@ -91,6 +91,10 @@ async def main():
     # Add this to the argument parser section
     parser.add_argument('-pa', '--paths', help='Additional paths to check (comma-separated, e.g., ".git/config,.env")')
     
+    # Add these arguments in the parser section
+    parser.add_argument('-hd', '--headers', help='Custom headers to send with each request (format: "Header1: value1,Header2: value2")')
+    parser.add_argument('-p', '--post', help='Send POST request with this data')
+    
     # If no arguments provided, print help and exit
     if len(sys.argv) == 1:
         parser.print_help()
@@ -147,7 +151,9 @@ async def main():
             match_codes=args.match_codes,
             exclude_codes=args.exclude_codes,
             shard=args.shard,
-            paths=args.paths.split(',') if args.paths else None
+            paths=args.paths.split(',') if args.paths else None,
+            custom_headers=dict(h.split(': ', 1) for h in args.headers.split(',')) if args.headers else None,
+            post_data=args.post
         )
 
         count = 0

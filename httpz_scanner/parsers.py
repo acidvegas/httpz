@@ -42,20 +42,13 @@ def parse_domain_url(domain: str) -> tuple:
             try:
                 port = int(port_str.split('/')[0])
             except ValueError:
-                port = 443 if protocol == 'https://' else 80
-        else:
-            port = 443 if protocol == 'https://' else 80
-        protocols = [f'{protocol}{base_domain}{":" + str(port) if port else ""}']
+                port = None
     else:
         if ':' in base_domain.split('/')[0]:
             base_domain, port_str = base_domain.split(':', 1)
-            port = int(port_str.split('/')[0]) if port_str.split('/')[0].isdigit() else 443
-        else:
-            port = 443
-        protocols = [
-            f'https://{base_domain}{":" + str(port) if port else ""}',
-            f'http://{base_domain}{":"  + str(port) if port else ""}'
-        ]
+            port = int(port_str.split('/')[0]) if port_str.split('/')[0].isdigit() else None
+    
+    protocols = ['http://', 'https://']  # Always try HTTP first
     
     return base_domain, port, protocols
 

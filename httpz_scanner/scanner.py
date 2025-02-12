@@ -5,6 +5,7 @@
 import asyncio
 import random
 import urllib.parse
+import json
 
 try:
     import aiohttp
@@ -24,7 +25,7 @@ from .utils   import debug, USER_AGENTS, input_generator
 class HTTPZScanner:
     '''Core scanner class for HTTP domain checking'''
     
-    def __init__(self, concurrent_limit = 100, timeout = 5, follow_redirects = False, check_axfr = False, resolver_file = None, output_file = None, show_progress = False, debug_mode = False, jsonl_output = False, show_fields = None, match_codes = None, exclude_codes = None, shard = None, paths = None):
+    def __init__(self, concurrent_limit = 100, timeout = 5, follow_redirects = False, check_axfr = False, resolver_file = None, output_file = None, show_progress = False, debug_mode = False, jsonl_output = False, show_fields = None, match_codes = None, exclude_codes = None, shard = None, paths = None, custom_headers=None, post_data=None):
         '''
         Initialize the HTTPZScanner class
         
@@ -42,6 +43,8 @@ class HTTPZScanner:
         :param exclude_codes: Status codes to exclude
         :param shard: Tuple of (shard_index, total_shards) for distributed scanning
         :param paths: List of additional paths to check on each domain
+        :param custom_headers: Dictionary of custom headers to send with each request
+        :param post_data: Data to send with POST requests
         '''
 
         self.concurrent_limit = concurrent_limit
@@ -55,6 +58,8 @@ class HTTPZScanner:
         self.jsonl_output     = jsonl_output
         self.shard            = shard
         self.paths            = paths or []
+        self.custom_headers   = custom_headers or {}
+        self.post_data        = post_data
 
         self.show_fields = show_fields or {
             'status_code'      : True,
@@ -78,136 +83,109 @@ class HTTPZScanner:
 
 
     async def check_domain(self, session: aiohttp.ClientSession, domain: str):
-        '''
-        Check a single domain and return results
-        
-        :param session: aiohttp.ClientSession
-        :param domain: str
-        '''
-        # Parse domain
+        '''Check a single domain and return results'''
         base_domain, port, protocols = parse_domain_url(domain)
         
-        results = []
-        
-        # For each protocol (http/https)
-        for base_url in protocols:
+        for protocol in protocols:
+            url = f'{protocol}{base_domain}'
+            if port:
+                url += f':{port}'
+                
             try:
-                # Check base URL first
-                if result := await self._check_url(session, base_url):
-                    results.append(result)
-                
-                # Check additional paths
-                for path in self.paths:
-                    path = path.strip('/')
-                    url = f'{base_url}/{path}'
-                    if result := await self._check_url(session, url):
-                        results.append(result)
-                        
-                if results:  # If we got any successful results, return them
-                    break
-                    
+                debug(f'Trying {url}...')
+                result = await self._check_url(session, url)
+                debug(f'Got result for {url}: {result}')
+                if result and (result['status'] != 400 or result.get('redirect_chain')):  # Accept redirects
+                    return result
             except Exception as e:
-                debug(f'Error checking {base_url}: {str(e)}')
+                debug(f'Error checking {url}: {str(e)}')
                 continue
-                
-        return results[0] if results else None  # Return first successful result or None
+        
+        return None
 
     async def _check_url(self, session: aiohttp.ClientSession, url: str):
-        '''
-        Check a single URL and return results
-        
-        :param session: aiohttp.ClientSession
-        :param url: URL to check
-        '''
+        '''Check a single URL and return results'''
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
+            headers.update(self.custom_headers)
             
-            async with session.get(url, timeout=self.timeout, 
-                                 allow_redirects=self.follow_redirects,
-                                 max_redirects=10 if self.follow_redirects else 0,
-                                 headers=headers) as response:
+            debug(f'Making request to {url} with headers: {headers}')
+            async with session.request('GET', url, 
+                timeout=self.timeout,
+                allow_redirects=True,  # Always follow redirects
+                max_redirects=10,
+                ssl=False,  # Don't verify SSL
+                headers=headers) as response:
                 
-                # Properly parse the URL
-                parsed_url = urllib.parse.urlparse(url)
-                parsed_domain = parsed_url.hostname
+                debug(f'Got response from {url}: status={response.status}, headers={dict(response.headers)}')
                 
                 result = {
-                    'domain': parsed_domain,
+                    'domain': urllib.parse.urlparse(url).hostname,
                     'status': response.status,
                     'url': str(response.url),
-                    'port': parsed_url.port or ('443' if parsed_url.scheme == 'https' else '80')
+                    'response_headers': dict(response.headers)
                 }
                 
-                # Early exit conditions
-                if result['status'] == -1:
-                    return None
-                if self.match_codes and result['status'] not in self.match_codes:
-                    return result
-                if self.exclude_codes and result['status'] in self.exclude_codes:
-                    return result
-                
-                # Continue with full processing only if status code matches criteria
-                result['url'] = str(response.url)
-                
-                # Add headers if requested
-                headers = dict(response.headers)
-                if headers and (self.show_fields.get('headers') or self.show_fields.get('all_flags')):
-                    result['headers'] = headers
-                else:
-                    # Only add content type/length if headers aren't included
-                    if content_type := response.headers.get('content-type', '').split(';')[0]:
-                        result['content_type'] = content_type
-                    if content_length := response.headers.get('content-length'):
-                        result['content_length'] = content_length
-                
-                # Only add redirect chain if it exists
-                if self.follow_redirects and response.history:
+                if response.history:
                     result['redirect_chain'] = [str(h.url) for h in response.history] + [str(response.url)]
-
-                # Do DNS lookups only if we're going to use the result
-                ips, cname, nameservers, _ = await resolve_all_dns(
-                    parsed_domain, self.timeout, None, self.check_axfr
-                )
-                
-                # Only add DNS fields if they have values
-                if ips:
-                    result['ips'] = ips
-                if cname:
-                    result['cname'] = cname
-                if nameservers:
-                    result['nameservers'] = nameservers
-
-                # Only add TLS info if available
-                if response.url.scheme == 'https':
-                    try:
-                        if ssl_object := response._protocol.transport.get_extra_info('ssl_object'):
-                            if tls_info := await get_cert_info(ssl_object, str(response.url)):
-                                # Only add TLS fields that have values
-                                result['tls'] = {k: v for k, v in tls_info.items() if v}
-                    except AttributeError:
-                        debug(f'Failed to get SSL info for {url}')
-
-                content_type = response.headers.get('Content-Type', '')
-                html = await response.text() if any(x in content_type.lower() for x in ['text/html', 'application/xhtml']) else None
-                
-                # Only add title if it exists
-                if soup := bs4.BeautifulSoup(html, 'html.parser'):
-                    if soup.title and soup.title.string:
-                        result['title'] = ' '.join(soup.title.string.strip().split()).rstrip('.')[:300]
-                
-                # Only add body if it exists
-                if body_text := soup.get_text():
-                    result['body'] = ' '.join(body_text.split()).rstrip('.')[:500]
-                
-                # Only add favicon hash if it exists
-                if favicon_hash := await get_favicon_hash(session, url, html):
-                    result['favicon_hash'] = favicon_hash
+                    debug(f'Redirect chain for {url}: {result["redirect_chain"]}')
                 
                 return result
                 
+        except aiohttp.ClientSSLError as e:
+            debug(f'SSL Error for {url}: {str(e)}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'SSL Error: {str(e)}',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'SSL'
+            }
+        except aiohttp.ClientConnectorCertificateError as e:
+            debug(f'Certificate Error for {url}: {str(e)}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'Certificate Error: {str(e)}',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'CERT'
+            }
+        except aiohttp.ClientConnectorError as e:
+            debug(f'Connection Error for {url}: {str(e)}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'Connection Failed: {str(e)}',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'CONN'
+            }
+        except aiohttp.ClientError as e:
+            debug(f'HTTP Error for {url}: {e.__class__.__name__}: {str(e)}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'HTTP Error: {e.__class__.__name__}: {str(e)}',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'HTTP'
+            }
+        except asyncio.TimeoutError:
+            debug(f'Timeout for {url}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'Connection Timed Out after {self.timeout}s',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'TIMEOUT'
+            }
         except Exception as e:
-            debug(f'Error checking {url}: {str(e)}')
-            return None
+            debug(f'Unexpected error for {url}: {e.__class__.__name__}: {str(e)}')
+            return {
+                'domain': urllib.parse.urlparse(url).hostname,
+                'status': -1,
+                'error': f'Error: {e.__class__.__name__}: {str(e)}',
+                'protocol': 'https' if url.startswith('https://') else 'http',
+                'error_type': 'UNKNOWN'
+            }
 
 
     async def scan(self, input_source):
@@ -225,7 +203,9 @@ class HTTPZScanner:
         if not self.resolvers:
             self.resolvers = await load_resolvers(self.resolver_file)
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        # Just use ssl=False, that's all we need
+        connector = aiohttp.TCPConnector(ssl=False, enable_cleanup_closed=True)
+        async with aiohttp.ClientSession(connector=connector) as session:
             tasks = {}  # Change to dict to track domain for each task
             domain_queue = asyncio.Queue()
             queue_empty = False
@@ -233,90 +213,75 @@ class HTTPZScanner:
             async def process_domain(domain):
                 try:
                     result = await self.check_domain(session, domain)
+                    if self.show_progress:
+                        self.progress_count += 1
                     if result:
-                        if self.show_progress:
-                            self.progress_count += 1
-                        return result
-                except Exception as e:
-                    debug(f'Error processing {domain}: {str(e)}')
-                return None
-
-            # Add domains to queue based on input type
-            async def queue_domains():
-                try:
-                    if isinstance(input_source, str):
-                        # File or stdin input
-                        gen = input_generator(input_source, self.shard)
-                        async for domain in gen:
-                            await domain_queue.put(domain)
-                    
-                    elif isinstance(input_source, (list, tuple)):
-                        # List/tuple input
-                        for line_num, domain in enumerate(input_source):
-                            if domain := str(domain).strip():
-                                if self.shard is None or line_num % self.shard[1] == self.shard[0]:
-                                    await domain_queue.put(domain)
-                    
+                        return domain, result
                     else:
-                        # Async generator input
-                        line_num = 0
-                        async for domain in input_source:
-                            if isinstance(domain, bytes):
-                                domain = domain.decode()
-                            if domain := domain.strip():
-                                if self.shard is None or line_num % self.shard[1] == self.shard[0]:
-                                    await domain_queue.put(domain)
-                                line_num += 1
+                        # Create a proper error result if check_domain returns None
+                        return domain, {
+                            'domain': domain,
+                            'status': -1,
+                            'error': 'No successful response from either HTTP or HTTPS',
+                            'protocol': 'unknown',
+                            'error_type': 'NO_RESPONSE'
+                        }
                 except Exception as e:
-                    debug(f'Error queuing domains: {str(e)}')
-                finally:
-                    # Signal queue completion
-                    await domain_queue.put(None)
+                    debug(f'Error processing {domain}: {e.__class__.__name__}: {str(e)}')
+                    # Return structured error information
+                    return domain, {
+                        'domain': domain,
+                        'status': -1,
+                        'error': f'{e.__class__.__name__}: {str(e)}',
+                        'protocol': 'unknown',
+                        'error_type': 'PROCESS'
+                    }
 
-            # Start domain queuing task
-            queue_task = asyncio.create_task(queue_domains())
-            
+            # Queue processor
+            async def queue_processor():
+                async for domain in input_generator(input_source, self.shard):
+                    await domain_queue.put(domain)
+                    self.processed_domains += 1
+                nonlocal queue_empty
+                queue_empty = True
+
+            # Start queue processor
+            queue_task = asyncio.create_task(queue_processor())
+
             try:
-                while not queue_empty or tasks:
-                    # Start new tasks if needed
-                    while len(tasks) < self.concurrent_limit and not queue_empty:
-                        try:
-                            domain = await domain_queue.get()
-                            if domain is None:
-                                queue_empty = True
-                                break
-                            task = asyncio.create_task(process_domain(domain))
-                            tasks[task] = domain
-                        except Exception as e:
-                            debug(f'Error creating task: {str(e)}')
+                while not (queue_empty and domain_queue.empty() and not tasks):
+                    # Fill up tasks until we hit concurrent limit
+                    while len(tasks) < self.concurrent_limit and not domain_queue.empty():
+                        domain = await domain_queue.get()
+                        task = asyncio.create_task(process_domain(domain))
+                        tasks[task] = domain
                     
-                    if not tasks:
-                        break
-
-                    # Wait for the FIRST task to complete
-                    try:
+                    if tasks:
+                        # Wait for at least one task to complete
                         done, _ = await asyncio.wait(
                             tasks.keys(),
-                            timeout=self.timeout,
                             return_when=asyncio.FIRST_COMPLETED
                         )
                         
-                        # Process completed task immediately
+                        # Process completed tasks
                         for task in done:
                             domain = tasks.pop(task)
                             try:
-                                if result := await task:
+                                _, result = await task
+                                if result:
                                     yield result
                             except Exception as e:
-                                debug(f'Error processing result for {domain}: {str(e)}')
-                            
-                    except Exception as e:
-                        debug(f'Error in task processing loop: {str(e)}')
-                        # Remove any failed tasks
-                        failed_tasks = [t for t in tasks if t.done() and t.exception()]
-                        for task in failed_tasks:
-                            tasks.pop(task)
-                    
+                                debug(f'Task error for {domain}: {e.__class__.__name__}: {str(e)}')
+                                yield {
+                                    'domain': domain,
+                                    'status': -1,
+                                    'error': f'Task Error: {e.__class__.__name__}: {str(e)}',
+                                    'protocol': 'unknown',
+                                    'error_type': 'TASK'
+                                }
+                    else:
+                        await asyncio.sleep(0.1)  # Prevent CPU spin when no tasks
+
             finally:
                 # Clean up
                 for task in tasks:

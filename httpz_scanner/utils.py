@@ -68,8 +68,9 @@ USER_AGENTS = [
 ]
 
 
-def debug(msg: str): 
-    if not SILENT_MODE: logging.debug(msg)
+def debug(msg: str):
+    if not SILENT_MODE:
+        logging.debug(msg)
 def error(msg: str):
     if not SILENT_MODE: logging.error(msg)
 def info(msg: str):
