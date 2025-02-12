@@ -229,8 +229,8 @@ class HTTPZScanner:
             # Handle different input types
             if isinstance(input_source, str):
                 # File or stdin input
-                domain_iter = input_generator(input_source, self.shard)
-                for domain in domain_iter:
+                gen = input_generator(input_source, self.shard)
+                async for domain in gen:
                     if len(tasks) >= self.concurrent_limit:
                         done, tasks = await asyncio.wait(
                             tasks, return_when=asyncio.FIRST_COMPLETED
