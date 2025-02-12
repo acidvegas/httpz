@@ -155,17 +155,19 @@ async def main():
                 with open(args.output, 'a') as f:
                     f.write(json.dumps(result) + '\n')
             
-            # Only output and increment counter if we have content to show
+            # Handle JSON output separately
+            if args.jsonl:
+                print(json.dumps(result))
+                continue
+
+            # Only output and increment counter if we have content to show for normal output
             formatted = format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes)
             if formatted:
                 if args.progress:
                     count += 1
                     info(f"[{count}] {formatted}")
                 else:
-                    if args.jsonl:
-                        print(json.dumps(result))
-                    else:
-                        print(formatted)
+                    print(formatted)
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
