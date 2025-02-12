@@ -152,10 +152,11 @@ async def main():
             if args.output:
                 with open(args.output, 'a') as f:
                     f.write(json.dumps(result) + '\n')
+                    f.flush()  # Ensure file output is immediate
             
             # Handle JSON output separately
             if args.jsonl:
-                print(json.dumps(result))
+                print(json.dumps(result), flush=True)  # Force flush
                 continue
 
             # Only output and increment counter if we have content to show for normal output
@@ -164,8 +165,9 @@ async def main():
                 if args.progress:
                     count += 1
                     info(f"[{count}] {formatted}")
+                    sys.stdout.flush()  # Force flush after each domain
                 else:
-                    print(formatted)
+                    print(formatted, flush=True)  # Force flush
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
