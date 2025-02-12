@@ -3,7 +3,6 @@
 # httpz_scanner/scanner.py
 
 import asyncio
-import json
 import random
 
 try:
@@ -16,11 +15,9 @@ try:
 except ImportError:
     raise ImportError('missing bs4 module (pip install beautifulsoup4)')
 
-from .dns        import resolve_all_dns, load_resolvers
-from .formatters import format_console_output
-from .colors     import Colors
-from .parsers    import parse_domain_url, get_cert_info, get_favicon_hash, parse_title
-from .utils      import debug, info, USER_AGENTS, input_generator
+from .dns     import resolve_all_dns, load_resolvers
+from .parsers import parse_domain_url, get_cert_info, get_favicon_hash
+from .utils   import debug, USER_AGENTS, input_generator
 
 
 class HTTPZScanner:
@@ -77,21 +74,26 @@ class HTTPZScanner:
         self.progress_count    = 0
 
 
-    async def init(self):
-        '''Initialize resolvers - must be called before scanning'''
-        self.resolvers = await load_resolvers(self.resolver_file)
-
-
     async def check_domain(self, session: aiohttp.ClientSession, domain: str):
-        '''Check a single domain and return results'''
-        nameserver = random.choice(self.resolvers) if self.resolvers else None
-        base_domain, port, protocols = parse_domain_url(domain)
+        '''
+        Check a single domain and return results
         
+        :param session: aiohttp.ClientSession
+        :param domain: str
+        '''
+
+        # Get random nameserver
+        nameserver = random.choice(self.resolvers) if self.resolvers else None
+
+        # Parse domain
+        base_domain, port, protocols = parse_domain_url(domain)
+
+        # Initialize result dictionary
         result = {
-            'domain'  : base_domain,
-            'status'  : 0,
-            'url'     : protocols[0],
-            'port'    : port,
+            'domain' : base_domain,
+            'status' : 0,
+            'url'    : protocols[0],
+            'port'   : port,
         }
 
         # Try each protocol
@@ -100,11 +102,7 @@ class HTTPZScanner:
                 # Set random user agent for each request
                 headers = {'User-Agent': random.choice(USER_AGENTS)}
                 
-                async with session.get(url, timeout=self.timeout, 
-                                     allow_redirects=self.follow_redirects,
-                                     max_redirects=10 if self.follow_redirects else 0,
-                                     headers=headers) as response:
-                    
+                async with session.get(url, timeout=self.timeout, allow_redirects=self.follow_redirects, max_redirects=10 if self.follow_redirects else 0, headers=headers) as response:
                     result['status'] = response.status
                     
                     # Bail immediately if it's a failed lookup - no point processing further
@@ -196,7 +194,7 @@ class HTTPZScanner:
         '''
         
         if not self.resolvers:
-            await self.init()
+            self.resolvers = await load_resolvers(self.resolver_file)
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             tasks = set()
@@ -212,15 +210,16 @@ class HTTPZScanner:
                             tasks, return_when=asyncio.FIRST_COMPLETED
                         )
                         for task in done:
-                            if result := await task:  # Only yield if result is not None
+                            if result := await task:
                                 if self.show_progress:
                                     count += 1
                                 yield result
 
                     task = asyncio.create_task(self.check_domain(session, domain))
                     tasks.add(task)
+
+            # List/tuple input
             elif isinstance(input_source, (list, tuple)):
-                # List/tuple input
                 for line_num, domain in enumerate(input_source):
                     if domain := str(domain).strip():
                         if self.shard is None or line_num % self.shard[1] == self.shard[0]:
@@ -229,7 +228,7 @@ class HTTPZScanner:
                                     tasks, return_when=asyncio.FIRST_COMPLETED
                                 )
                                 for task in done:
-                                    if result := await task:  # Only yield if result is not None
+                                    if result := await task:
                                         if self.show_progress:
                                             count += 1
                                         yield result
@@ -251,7 +250,7 @@ class HTTPZScanner:
                                     tasks, return_when=asyncio.FIRST_COMPLETED
                                 )
                                 for task in done:
-                                    if result := await task:  # Only yield if result is not None
+                                    if result := await task:
                                         if self.show_progress:
                                             count += 1
                                         yield result
@@ -264,7 +263,7 @@ class HTTPZScanner:
             if tasks:
                 done, _ = await asyncio.wait(tasks)
                 for task in done:
-                    if result := await task:  # Only yield if result is not None
+                    if result := await task:
                         if self.show_progress:
                             count += 1
                         yield result 

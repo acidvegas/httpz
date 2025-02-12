@@ -4,7 +4,8 @@
 
 class Colors:
     '''ANSI color codes for terminal output'''
-    HEADER     = '\033[95m' # Light purple
+
+    HEADER     = '\033[95m'
     BLUE       = '\033[94m'
     GREEN      = '\033[92m'
     YELLOW     = '\033[93m'
@@ -12,9 +13,9 @@ class Colors:
     BOLD       = '\033[1m'
     UNDERLINE  = '\033[4m'
     RESET      = '\033[0m'
-    PURPLE     = '\033[35m'       # Dark purple
-    LIGHT_RED  = '\033[38;5;203m' # Light red
-    DARK_GREEN = '\033[38;5;22m'  # Dark green
-    PINK       = '\033[38;5;198m' # Bright pink
-    GRAY       = '\033[90m'       # Gray color
-    CYAN       = '\033[96m'       # Cyan color 
+    PURPLE     = '\033[35m'
+    LIGHT_RED  = '\033[38;5;203m'
+    DARK_GREEN = '\033[38;5;22m'
+    PINK       = '\033[38;5;198m'
+    GRAY       = '\033[90m'
+    CYAN       = '\033[96m' 

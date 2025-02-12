@@ -5,6 +5,7 @@
 from .colors import Colors
 from .utils  import human_size
 
+
 def format_console_output(result: dict, debug: bool = False, show_fields: dict = None, match_codes: set = None, exclude_codes: set = None) -> str:
     '''
     Format the output with colored sections

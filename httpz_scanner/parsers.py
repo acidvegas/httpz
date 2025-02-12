@@ -2,6 +2,8 @@
 # HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
 # httpz_scanner/parsers.py
 
+import argparse
+
 try:
     import bs4
 except ImportError:
@@ -20,7 +22,6 @@ except ImportError:
     raise ImportError('missing mmh3 module (pip install mmh3)')
 
 from .utils import debug, error
-import argparse
 
 
 def parse_domain_url(domain: str) -> tuple:
@@ -188,7 +189,7 @@ def parse_title(html: str, content_type: str = None) -> str:
     :param html: HTML content of the page
     :param content_type: Content-Type header value
     '''
-    
+
     # Only parse title for HTML content
     if content_type and not any(x in content_type.lower() for x in ['text/html', 'application/xhtml']):
         return None

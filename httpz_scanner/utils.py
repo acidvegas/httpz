@@ -117,7 +117,7 @@ async def input_generator(input_source, shard: tuple = None):
     # Handle stdin
     if input_source == '-' or input_source is None:
         for line in sys.stdin:
-            await asyncio.sleep(0)  # Yield control
+            await asyncio.sleep(0)
             if line := line.strip():
                 if shard is None or line_num % shard[1] == shard[0]:
                     yield line
@@ -127,7 +127,7 @@ async def input_generator(input_source, shard: tuple = None):
     elif isinstance(input_source, str) and os.path.exists(input_source):
         with open(input_source, 'r') as f:
             for line in f:
-                await asyncio.sleep(0)  # Yield control
+                await asyncio.sleep(0)
                 if line := line.strip():
                     if shard is None or line_num % shard[1] == shard[0]:
                         yield line
@@ -136,7 +136,7 @@ async def input_generator(input_source, shard: tuple = None):
     # Handle iterables (generators, lists, etc)
     elif hasattr(input_source, '__iter__') and not isinstance(input_source, (str, bytes)):
         for line in input_source:
-            await asyncio.sleep(0)  # Yield control
+            await asyncio.sleep(0)
             if isinstance(line, bytes):
                 line = line.decode()
             if line := line.strip():
@@ -149,7 +149,7 @@ async def input_generator(input_source, shard: tuple = None):
         if isinstance(input_source, bytes):
             input_source = input_source.decode()
         for line in input_source.splitlines():
-            await asyncio.sleep(0)  # Yield control
+            await asyncio.sleep(0)
             if line := line.strip():
                 if shard is None or line_num % shard[1] == shard[0]:
                     yield line

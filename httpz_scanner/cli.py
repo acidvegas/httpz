@@ -4,16 +4,19 @@
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
-import json
+
+from datetime import datetime
 
 from .colors     import Colors
+from .formatters import format_console_output
+from .parsers    import parse_status_codes, parse_shard
 from .scanner    import HTTPZScanner
 from .utils      import SILENT_MODE, info
-from .parsers    import parse_status_codes, parse_shard
-from .formatters import format_console_output
+
 
 def setup_logging(level='INFO', log_to_disk=False):
     '''
@@ -22,16 +25,16 @@ def setup_logging(level='INFO', log_to_disk=False):
     :param level: Logging level (INFO or DEBUG)
     :param log_to_disk: Whether to also log to file
     '''
+
     class ColoredFormatter(logging.Formatter):
-        def formatTime(self, record, datefmt=None):
-            # Format: MM-DD HH:MM
-            from datetime import datetime
+        def formatTime(self, record):
             dt = datetime.fromtimestamp(record.created)
-            return f"{Colors.GRAY}{dt.strftime('%m-%d %H:%M')}{Colors.RESET}"
+            return f'{Colors.GRAY}{dt.strftime("%m-%d %H:%M")}{Colors.RESET}'
         
         def format(self, record):
             return f'{self.formatTime(record)} {record.getMessage()}'
     
+    # Setup logging handlers
     handlers = []
     
     # Console handler
@@ -47,44 +50,39 @@ def setup_logging(level='INFO', log_to_disk=False):
         handlers.append(file_handler)
     
     # Setup logger
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        handlers=handlers
-    )
+    logging.basicConfig(level=getattr(logging, level.upper()), handlers=handlers)
+
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description=f'{Colors.GREEN}Hyper-fast HTTP Scraping Tool{Colors.RESET}',
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=f'{Colors.GREEN}Hyper-fast HTTP Scraping Tool{Colors.RESET}', formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # Add arguments
     parser.add_argument('file', nargs='?', default='-', help='File containing domains to check (one per line), use - for stdin')
     parser.add_argument('-all', '--all-flags', action='store_true', help='Enable all output flags')
-    parser.add_argument('-d', '--debug', action='store_true', help='Show error states and debug information')
-    parser.add_argument('-c', '--concurrent', type=int, default=100, help='Number of concurrent checks')
-    parser.add_argument('-j', '--jsonl', action='store_true', help='Output JSON Lines format to console')
-    parser.add_argument('-o', '--output', help='Output file path (JSONL format)')
+    parser.add_argument('-d',   '--debug', action='store_true', help='Show error states and debug information')
+    parser.add_argument('-c',   '--concurrent', type=int, default=100, help='Number of concurrent checks')
+    parser.add_argument('-j',   '--jsonl', action='store_true', help='Output JSON Lines format to console')
+    parser.add_argument('-o',   '--output', help='Output file path (JSONL format)')
     
     # Output field flags
-    parser.add_argument('-b', '--body', action='store_true', help='Show body preview')
-    parser.add_argument('-cn', '--cname', action='store_true', help='Show CNAME records')
-    parser.add_argument('-cl', '--content-length', action='store_true', help='Show content length')
-    parser.add_argument('-ct', '--content-type', action='store_true', help='Show content type')
-    parser.add_argument('-f', '--favicon', action='store_true', help='Show favicon hash')
-    parser.add_argument('-fr', '--follow-redirects', action='store_true', help='Follow redirects (max 10)')
-    parser.add_argument('-hr', '--headers', action='store_true', help='Show response headers')
-    parser.add_argument('-i', '--ip', action='store_true', help='Show IP addresses')
-    parser.add_argument('-sc', '--status-code', action='store_true', help='Show status code')
-    parser.add_argument('-ti', '--title', action='store_true', help='Show page title')
+    parser.add_argument('-b',   '--body', action='store_true', help='Show body preview')
+    parser.add_argument('-cn',  '--cname', action='store_true', help='Show CNAME records')
+    parser.add_argument('-cl',  '--content-length', action='store_true', help='Show content length')
+    parser.add_argument('-ct',  '--content-type', action='store_true', help='Show content type')
+    parser.add_argument('-f',   '--favicon', action='store_true', help='Show favicon hash')
+    parser.add_argument('-fr',  '--follow-redirects', action='store_true', help='Follow redirects (max 10)')
+    parser.add_argument('-hr',  '--headers', action='store_true', help='Show response headers')
+    parser.add_argument('-i',   '--ip', action='store_true', help='Show IP addresses')
+    parser.add_argument('-sc',  '--status-code', action='store_true', help='Show status code')
+    parser.add_argument('-ti',  '--title', action='store_true', help='Show page title')
     parser.add_argument('-tls', '--tls-info', action='store_true', help='Show TLS certificate information')
     
     # Other arguments
     parser.add_argument('-ax', '--axfr', action='store_true', help='Try AXFR transfer against nameservers')
     parser.add_argument('-ec', '--exclude-codes', type=parse_status_codes, help='Exclude these status codes (comma-separated, e.g., 404,500)')
     parser.add_argument('-mc', '--match-codes', type=parse_status_codes, help='Only show these status codes (comma-separated, e.g., 200,301,404)')
-    parser.add_argument('-p', '--progress', action='store_true', help='Show progress counter')
-    parser.add_argument('-r', '--resolvers', help='File containing DNS resolvers (one per line)')
+    parser.add_argument('-p',  '--progress', action='store_true', help='Show progress counter')
+    parser.add_argument('-r',  '--resolvers', help='File containing DNS resolvers (one per line)')
     parser.add_argument('-to', '--timeout', type=int, default=5, help='Request timeout in seconds')
     
     # Add shard argument
@@ -176,9 +174,12 @@ async def main():
         logging.error(f'Unexpected error: {str(e)}')
         sys.exit(1)
 
+
 def run():
     '''Entry point for the CLI'''
     asyncio.run(main())
+
+
 
 if __name__ == '__main__':
     run() 
