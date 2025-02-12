@@ -7,11 +7,13 @@ import asyncio
 import logging
 import os
 import sys
+import json
 
-from .colors  import Colors
-from .scanner import HTTPZScanner
-from .utils   import SILENT_MODE, info
-from .parsers import parse_status_codes, parse_shard
+from .colors     import Colors
+from .scanner    import HTTPZScanner
+from .utils      import SILENT_MODE, info
+from .parsers    import parse_status_codes, parse_shard
+from .formatters import format_console_output
 
 def setup_logging(level='INFO', log_to_disk=False):
     '''
@@ -147,8 +149,12 @@ async def main():
             shard=args.shard
         )
 
-        # Run the scanner with file/stdin input
-        await scanner.scan(args.file)
+        # Run the scanner and process results
+        async for result in scanner.scan(args.file):
+            if args.jsonl:
+                print(json.dumps(result))
+            else:
+                print(format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes))
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
