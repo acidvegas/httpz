@@ -87,6 +87,9 @@ async def main():
     
     # Add shard argument
     parser.add_argument('-sh','--shard', type=parse_shard, help='Shard index and total shards (e.g., 1/3)')
+
+    # Add this to the argument parser section
+    parser.add_argument('-pa', '--paths', help='Additional paths to check (comma-separated, e.g., ".git/config,.env")')
     
     # If no arguments provided, print help and exit
     if len(sys.argv) == 1:
@@ -143,7 +146,8 @@ async def main():
             show_fields=show_fields,
             match_codes=args.match_codes,
             exclude_codes=args.exclude_codes,
-            shard=args.shard
+            shard=args.shard,
+            paths=args.paths.split(',') if args.paths else None
         )
 
         count = 0
