@@ -148,7 +148,6 @@ async def main():
             shard=args.shard
         )
 
-        # Run the scanner and handle ALL output here
         count = 0
         async for result in scanner.scan(args.file):
             # Write to output file if specified
@@ -156,15 +155,17 @@ async def main():
                 with open(args.output, 'a') as f:
                     f.write(json.dumps(result) + '\n')
             
-            # Console output
-            if args.progress:
-                count += 1
-                info(f"[{count}] {format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes)}")
-            else:
-                if args.jsonl:
-                    print(json.dumps(result))
+            # Only output and increment counter if we have content to show
+            formatted = format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes)
+            if formatted:
+                if args.progress:
+                    count += 1
+                    info(f"[{count}] {formatted}")
                 else:
-                    print(format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes))
+                    if args.jsonl:
+                        print(json.dumps(result))
+                    else:
+                        print(formatted)
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
