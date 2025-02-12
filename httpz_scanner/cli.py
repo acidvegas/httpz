@@ -132,7 +132,6 @@ async def main():
         show_fields = {k: True for k in show_fields}
 
     try:
-        # Create scanner instance
         scanner = HTTPZScanner(
             concurrent_limit=args.concurrent,
             timeout=args.timeout,
@@ -149,8 +148,14 @@ async def main():
             shard=args.shard
         )
 
-        # Run the scanner and process results
+        # Run the scanner and handle output in ONE place
         async for result in scanner.scan(args.file):
+            # Write to output file if specified
+            if args.output:
+                with open(args.output, 'a') as f:
+                    f.write(json.dumps(result) + '\n')
+            
+            # Print to console based on format
             if args.jsonl:
                 print(json.dumps(result))
             else:

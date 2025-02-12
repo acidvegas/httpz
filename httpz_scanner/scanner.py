@@ -74,6 +74,7 @@ class HTTPZScanner:
         self.exclude_codes     = exclude_codes
         self.resolvers         = None
         self.processed_domains = 0
+        self.progress_count    = 0
 
 
     async def init(self):
@@ -179,33 +180,10 @@ class HTTPZScanner:
 
 
     async def process_result(self, result):
-        '''
-        Process and output a single result
-        
-        :param result: result to process
-        '''
-
-        formatted = format_console_output(result, self.debug_mode, self.show_fields, self.match_codes, self.exclude_codes)
-        
-        if formatted:
-            # Write to file if specified
-            if self.output_file:
-                if (not self.match_codes or result['status'] in self.match_codes) and \
-                   (not self.exclude_codes or result['status'] not in self.exclude_codes):
-                    async with aiohttp.ClientSession() as session:
-                        with open(self.output_file, 'a') as f:
-                            json.dump(result, f, ensure_ascii=False)
-                            f.write('\n')
-            
-            # Console output
-            if self.jsonl_output:
-                print(json.dumps(result))
-            else:
-                self.processed_domains += 1
-                if self.show_progress:
-                    info(f"{Colors.GRAY}[{self.processed_domains:,}]{Colors.RESET} {formatted}")
-                else:
-                    info(formatted)
+        '''Process a scan result'''
+        if self.show_progress:
+            self.progress_count += 1
+            info(f'[{self.progress_count}] {format_console_output(result, self.debug_mode, self.show_fields, self.match_codes, self.exclude_codes)}')
 
 
     async def scan(self, input_source):
