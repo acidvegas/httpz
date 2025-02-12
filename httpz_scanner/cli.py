@@ -71,7 +71,7 @@ async def main():
     parser.add_argument('-ct',  '--content-type', action='store_true', help='Show content type')
     parser.add_argument('-f',   '--favicon', action='store_true', help='Show favicon hash')
     parser.add_argument('-fr',  '--follow-redirects', action='store_true', help='Follow redirects (max 10)')
-    parser.add_argument('-hr',  '--headers', action='store_true', help='Show response headers')
+    parser.add_argument('-hr',  '--show-headers', action='store_true', help='Show response headers')
     parser.add_argument('-i',   '--ip', action='store_true', help='Show IP addresses')
     parser.add_argument('-sc',  '--status-code', action='store_true', help='Show status code')
     parser.add_argument('-ti',  '--title', action='store_true', help='Show page title')
@@ -126,7 +126,7 @@ async def main():
         'body'             : args.all_flags or args.body,
         'ip'               : args.all_flags or args.ip,
         'favicon'          : args.all_flags or args.favicon,
-        'headers'          : args.all_flags or args.headers,
+        'headers'          : args.all_flags or args.show_headers,
         'follow_redirects' : args.all_flags or args.follow_redirects,
         'cname'            : args.all_flags or args.cname,
         'tls'              : args.all_flags or args.tls_info
