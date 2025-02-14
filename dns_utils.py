@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# HTTPZ Web Scanner - Developed by acidvegas in Python (https://github.com/acidvegas/httpz)
-# httpz_scanner/dns.py
+# Hyperfast Scalable HTTP Scanner - Developed by acidvegas (https://github.com/acidvegas)
 
 import asyncio
+import logging
 import os
 
 try:
@@ -18,10 +18,8 @@ try:
 except ImportError:
     raise ImportError('missing dnspython library (pip install dnspython)')
 
-from .utils import debug, info, SILENT_MODE
 
-
-async def resolve_all_dns(domain: str, timeout: int = 5, nameserver: str = None, check_axfr: bool = False) -> tuple:
+async def resolve_records(domain: str, timeout: int = 5, nameserver: str = None, check_axfr: bool = False) -> tuple:
     '''
     Resolve all DNS records for a domain
     
@@ -75,6 +73,9 @@ async def attempt_axfr(domain: str, ns_ips: dict, timeout: int = 5) -> None:
         for ns_host, ips in ns_ips.items():
             # Loop through each NS IP
             for ns_ip in ips:
+
+                logging.debug(f'Attempting AXFR for {domain} from {ns_host} ({ns_ip})')
+
                 try:
                     # Attempt zone transfer
                     zone = dns.zone.from_xfr(dns.query.xfr(ns_ip, domain, lifetime=timeout))
@@ -83,11 +84,12 @@ async def attempt_axfr(domain: str, ns_ips: dict, timeout: int = 5) -> None:
                     with open(f'axfrout/{domain}_{ns_ip}.zone', 'w') as f:
                         zone.to_text(f)
 
-                    info(f'[AXFR SUCCESS] {domain} from {ns_host} ({ns_ip})')
+                    logging.info(f'[AXFR SUCCESS] {domain} from {ns_host} ({ns_ip})')
+                    break
                 except Exception as e:
-                    debug(f'AXFR failed for {domain} from {ns_ip}: {str(e)}')
+                    logging.debug(f'AXFR failed for {domain} from {ns_ip}: {str(e)}')
     except Exception as e:
-        debug(f'Failed AXFR for {domain}: {str(e)}')
+        logging.debug(f'Failed AXFR for {domain}: {str(e)}')
 
 
 async def load_resolvers(resolver_file: str = None) -> list:
@@ -105,12 +107,11 @@ async def load_resolvers(resolver_file: str = None) -> list:
             if resolvers:
                 return resolvers
         except Exception as e:
-            debug(f'Error loading resolvers from {resolver_file}: {str(e)}')
+            logging.debug(f'Error loading resolvers from {resolver_file}: {str(e)}')
 
     # Load from GitHub
     async with aiohttp.ClientSession() as session:
         async with session.get('https://raw.githubusercontent.com/trickest/resolvers/refs/heads/main/resolvers.txt') as response:
             resolvers = await response.text()
-            if not SILENT_MODE:
-                info(f'Loaded {len(resolvers.splitlines()):,} resolvers.')
+            logging.info(f'Loaded {len(resolvers.splitlines()):,} resolvers.')
             return [resolver.strip() for resolver in resolvers.splitlines()] 
