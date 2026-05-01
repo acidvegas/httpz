@@ -11,102 +11,94 @@ import sys
 
 from datetime import datetime
 
+from . import utils
 from .colors     import Colors
 from .formatters import format_console_output
-from .parsers    import parse_status_codes, parse_shard
+from .parsers    import parse_status_codes, parse_shard, DEFAULT_FAVICON_BYTES
 from .scanner    import HTTPZScanner
-from .utils      import SILENT_MODE, info
+from .utils      import info
 
 
 def setup_logging(level='INFO', log_to_disk=False):
     '''
-    Setup logging configuration
-    
-    :param level: Logging level (INFO or DEBUG)
-    :param log_to_disk: Whether to also log to file
+    Setup logging configuration.
+
+    :param level: logging level (INFO or DEBUG)
+    :param log_to_disk: also log to logs/httpz.log
     '''
 
     class ColoredFormatter(logging.Formatter):
         def formatTime(self, record):
             dt = datetime.fromtimestamp(record.created)
             return f'{Colors.GRAY}{dt.strftime("%m-%d %H:%M")}{Colors.RESET}'
-        
+
         def format(self, record):
             return f'{self.formatTime(record)} {record.getMessage()}'
-    
-    # Setup logging handlers
+
     handlers = []
-    
-    # Console handler
     console = logging.StreamHandler()
     console.setFormatter(ColoredFormatter())
     handlers.append(console)
-    
-    # File handler
+
     if log_to_disk:
         os.makedirs('logs', exist_ok=True)
-        file_handler = logging.FileHandler(f'logs/httpz.log')
+        file_handler = logging.FileHandler('logs/httpz.log')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         handlers.append(file_handler)
-    
-    # Setup logger
+
     logging.basicConfig(level=getattr(logging, level.upper()), handlers=handlers)
 
 
 async def main():
     parser = argparse.ArgumentParser(description=f'{Colors.GREEN}Hyper-fast HTTP Scraping Tool{Colors.RESET}', formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    # Add arguments
-    parser.add_argument('file', nargs='?', default='-', help='File containing domains to check (one per line), use - for stdin')
-    parser.add_argument('-all', '--all-flags', action='store_true', help='Enable all output flags')
+    parser.add_argument('file', nargs='?', default='-', help='File of domains (one per line), or - for stdin')
+    parser.add_argument('-all', '--all-flags', action='store_true', help='Enable all output fields')
     parser.add_argument('-d',   '--debug', action='store_true', help='Show error states and debug information')
-    parser.add_argument('-c',   '--concurrent', type=int, default=100, help='Number of concurrent checks')
-    parser.add_argument('-j',   '--jsonl', action='store_true', help='Output JSON Lines format to console')
-    parser.add_argument('-o',   '--output', help='Output file path (JSONL format)')
-    
+    parser.add_argument('-c',   '--concurrent', type=int, default=100, help='Concurrent in-flight checks')
+    parser.add_argument('-j',   '--jsonl', action='store_true', help='Output JSONL to stdout')
+    parser.add_argument('-o',   '--output', help='Output file path (JSONL)')
+
     # Output field flags
-    parser.add_argument('-b',   '--body', action='store_true', help='Show body preview')
-    parser.add_argument('-cn',  '--cname', action='store_true', help='Show CNAME records')
-    parser.add_argument('-cl',  '--content-length', action='store_true', help='Show content length')
-    parser.add_argument('-ct',  '--content-type', action='store_true', help='Show content type')
-    parser.add_argument('-f',   '--favicon', action='store_true', help='Show favicon hash')
-    parser.add_argument('-fr',  '--follow-redirects', action='store_true', help='Follow redirects (max 10)')
-    parser.add_argument('-hr',  '--show-headers', action='store_true', help='Show response headers')
-    parser.add_argument('-i',   '--ip', action='store_true', help='Show IP addresses')
+    parser.add_argument('-b',   '--body', action='store_true', help='Include body_preview/body_clean')
+    parser.add_argument('-cl',  '--content-length', action='store_true', help='Include content_length')
+    parser.add_argument('-ct',  '--content-type', action='store_true', help='Include content_type')
+    parser.add_argument('-f',   '--favicon', action='store_true', help='Include favicon hash')
+    parser.add_argument('-fr',  '--follow-redirects', action='store_true', help=f'Follow redirects (max {10})')
+    parser.add_argument('-hr',  '--show-headers', action='store_true', help='Include response headers')
+    parser.add_argument('-i',   '--ip', action='store_true', help='Include resolved A/AAAA IPs')
     parser.add_argument('-sc',  '--status-code', action='store_true', help='Show status code')
-    parser.add_argument('-ti',  '--title', action='store_true', help='Show page title')
-    parser.add_argument('-tls', '--tls-info', action='store_true', help='Show TLS certificate information')
-    
-    # Other arguments
-    parser.add_argument('-ax', '--axfr', action='store_true', help='Try AXFR transfer against nameservers')
-    parser.add_argument('-ec', '--exclude-codes', type=parse_status_codes, help='Exclude these status codes (comma-separated, e.g., 404,500)')
-    parser.add_argument('-mc', '--match-codes', type=parse_status_codes, help='Only show these status codes (comma-separated, e.g., 200,301,404)')
+    parser.add_argument('-ti',  '--title', action='store_true', help='Include page title')
+    parser.add_argument('-tls', '--tls-info', action='store_true', help='Include TLS certificate info')
+
+    # Tunables
+    parser.add_argument('-rt', '--retries', type=int, default=1, help='Retry attempts per protocol on transient errors')
+    parser.add_argument('-rb', '--retry-backoff', type=float, default=0.5, help='Linear backoff base seconds between retries')
+    parser.add_argument('-mb', '--max-body-size', type=int, default=1024*1024, help='Max body bytes to read')
+    parser.add_argument('-fm', '--favicon-max-size', type=int, default=DEFAULT_FAVICON_BYTES, help='Max favicon bytes to read')
+
+    # Filters / misc
+    parser.add_argument('-ec', '--exclude-codes', type=parse_status_codes, help='Exclude these status codes (e.g., 404,500)')
+    parser.add_argument('-mc', '--match-codes', type=parse_status_codes, help='Only show these status codes (e.g., 200,301,404)')
     parser.add_argument('-p',  '--progress', action='store_true', help='Show progress counter')
     parser.add_argument('-pd', '--post-data', help='Send POST request with this data')
-    parser.add_argument('-r',  '--resolvers', help='File containing DNS resolvers (one per line)')
+    parser.add_argument('-r',  '--resolvers', help='File of DNS resolvers (one per line) for IP lookups')
     parser.add_argument('-to', '--timeout', type=int, default=5, help='Request timeout in seconds')
-    
-    # Add shard argument
-    parser.add_argument('-sh','--shard', type=parse_shard, help='Shard index and total shards (e.g., 1/3)')
+    parser.add_argument('-dt', '--dns-timeout', type=float, default=2.0, help='DNS query timeout in seconds')
 
-    # Add this to the argument parser section
-    parser.add_argument('-pa', '--paths', help='Additional paths to check (comma-separated, e.g., ".git/config,.env")')
-    
-    # Add these arguments in the parser section
-    parser.add_argument('-hd', '--headers', help='Custom headers to send with each request (format: "Header1: value1,Header2: value2")')
-    
-    # If no arguments provided, print help and exit
+    parser.add_argument('-sh', '--shard', type=parse_shard, help='Shard index/total (e.g., 1/3)')
+    parser.add_argument('-hd', '--headers', help='Custom headers ("H1: v1,H2: v2")')
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(0)
-    
+
     args = parser.parse_args()
 
-    # Setup logging based on arguments
-    global SILENT_MODE
-    SILENT_MODE = args.jsonl
+    # SILENT_MODE controls library log helpers; mutate the module attribute, not a local global.
+    utils.SILENT_MODE = args.jsonl
 
-    if not SILENT_MODE:
+    if not utils.SILENT_MODE:
         if args.debug:
             setup_logging(level='DEBUG', log_to_disk=True)
         else:
@@ -117,7 +109,6 @@ async def main():
         else:
             info(f'Processing file: {args.file}')
 
-    # Setup show_fields
     show_fields = {
         'status_code'      : args.all_flags or args.status_code,
         'content_type'     : args.all_flags or args.content_type,
@@ -128,63 +119,78 @@ async def main():
         'favicon'          : args.all_flags or args.favicon,
         'headers'          : args.all_flags or args.show_headers,
         'follow_redirects' : args.all_flags or args.follow_redirects,
-        'cname'            : args.all_flags or args.cname,
-        'tls'              : args.all_flags or args.tls_info
+        'tls'              : args.all_flags or args.tls_info,
     }
-
-    # If no fields specified show all
     if not any(show_fields.values()):
         show_fields = {k: True for k in show_fields}
 
+    resolvers = None
+    if args.resolvers:
+        try:
+            with open(args.resolvers) as f:
+                resolvers = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            logging.error(f'Failed to load resolvers from {args.resolvers}: {e}')
+            sys.exit(1)
+
+    custom_headers = None
+    if args.headers:
+        custom_headers = dict(h.split(': ', 1) for h in args.headers.split(','))
+
+    out_fh = open(args.output, 'a', buffering=1) if args.output else None
     try:
         scanner = HTTPZScanner(
-            concurrent_limit=args.concurrent,
-            timeout=args.timeout,
-            follow_redirects=args.all_flags or args.follow_redirects,
-            check_axfr=args.axfr,
-            resolver_file=args.resolvers,
-            output_file=args.output,
-            show_progress=args.progress,
-            debug_mode=args.debug,
-            jsonl_output=args.jsonl,
-            show_fields=show_fields,
-            match_codes=args.match_codes,
-            exclude_codes=args.exclude_codes,
-            shard=args.shard,
-            paths=args.paths.split(',') if args.paths else None,
-            custom_headers=dict(h.split(': ', 1) for h in args.headers.split(',')) if args.headers else None,
-            post_data=args.post_data
+            concurrent_limit     = args.concurrent,
+            timeout              = args.timeout,
+            retries              = args.retries,
+            retry_backoff        = args.retry_backoff,
+            follow_redirects     = args.all_flags or args.follow_redirects,
+            max_body_size        = args.max_body_size,
+            favicon_max_size     = args.favicon_max_size,
+            fetch_headers        = show_fields['headers'],
+            fetch_content_type   = show_fields['content_type'],
+            fetch_content_length = show_fields['content_length'],
+            fetch_title          = show_fields['title'],
+            fetch_body           = show_fields['body'],
+            fetch_favicon        = show_fields['favicon'],
+            fetch_tls            = show_fields['tls'],
+            fetch_ips            = show_fields['ip'],
+            match_codes          = args.match_codes,
+            exclude_codes        = args.exclude_codes,
+            custom_headers       = custom_headers,
+            post_data            = args.post_data,
+            shard                = args.shard,
+            resolvers            = resolvers,
+            dns_timeout          = args.dns_timeout,
         )
 
         count = 0
         async for result in scanner.scan(args.file):
-            # Write to output file if specified
-            if args.output:
-                with open(args.output, 'a') as f:
-                    f.write(json.dumps(result) + '\n')
-                    f.flush()  # Ensure file output is immediate
-            
-            # Handle JSON output separately
+            if out_fh is not None:
+                out_fh.write(json.dumps(result) + '\n')
+
             if args.jsonl:
-                print(json.dumps(result), flush=True)  # Force flush
+                print(json.dumps(result), flush=True)
                 continue
 
-            # Only output and increment counter if we have content to show for normal output
             formatted = format_console_output(result, args.debug, show_fields, args.match_codes, args.exclude_codes)
             if formatted:
                 if args.progress:
                     count += 1
-                    info(f"[{count}] {formatted}")
-                    sys.stdout.flush()  # Force flush after each domain
+                    info(f'[{count}] {formatted}')
+                    sys.stdout.flush()
                 else:
-                    print(formatted, flush=True)  # Force flush
+                    print(formatted, flush=True)
 
     except KeyboardInterrupt:
         logging.warning('Process interrupted by user')
         sys.exit(1)
     except Exception as e:
-        logging.error(f'Unexpected error: {str(e)}')
+        logging.error(f'Unexpected error: {e}')
         sys.exit(1)
+    finally:
+        if out_fh is not None:
+            out_fh.close()
 
 
 def run():
@@ -192,6 +198,5 @@ def run():
     asyncio.run(main())
 
 
-
 if __name__ == '__main__':
-    run() 
+    run()

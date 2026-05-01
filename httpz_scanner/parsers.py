@@ -3,6 +3,8 @@
 # httpz_scanner/parsers.py
 
 import argparse
+import re
+import urllib.parse
 
 try:
     import bs4
@@ -12,7 +14,7 @@ except ImportError:
 try:
     from cryptography                   import x509
     from cryptography.hazmat.primitives import hashes
-    from cryptography.x509.oid          import NameOID
+    from cryptography.x509.oid          import NameOID, ExtensionOID
 except ImportError:
     raise ImportError('missing cryptography module (pip install cryptography)')
 
@@ -24,128 +26,241 @@ except ImportError:
 from .utils import debug, error
 
 
+_WS_RE = re.compile(r'\s+')
+
+TITLE_MAX_CHARS       = 1024
+BODY_PREVIEW_BYTES    = 1024
+BODY_CLEAN_CHARS      = 1024
+DEFAULT_FAVICON_BYTES = 256 * 1024
+
+
 def parse_domain_url(domain: str) -> tuple:
     '''
-    Parse domain string into base domain, port, and protocol list
-    
-    :param domain: Raw domain string to parse
+    Parse a raw domain string into (base_domain, port, ordered_protocol_list).
+
+    Protocol order:
+      - explicit https:// → ['https', 'http']
+      - explicit http://  → ['http', 'https']
+      - no scheme         → ['https', 'http']
+
+    :param domain: raw domain string
     '''
 
+    raw  = domain.strip().rstrip('/')
     port = None
-    base_domain = domain.rstrip('/')
-    
-    if base_domain.startswith(('http://', 'https://')):
-        protocol = 'https://' if base_domain.startswith('https://') else 'http://'
-        base_domain = base_domain.split('://', 1)[1]
-        if ':' in base_domain.split('/')[0]:
-            base_domain, port_str = base_domain.split(':', 1)
-            try:
-                port = int(port_str.split('/')[0])
-            except ValueError:
-                port = None
+
+    if raw.startswith('https://'):
+        protocols = ['https', 'http']
+        rest      = raw[len('https://'):]
+    elif raw.startswith('http://'):
+        protocols = ['http', 'https']
+        rest      = raw[len('http://'):]
     else:
-        if ':' in base_domain.split('/')[0]:
-            base_domain, port_str = base_domain.split(':', 1)
-            port = int(port_str.split('/')[0]) if port_str.split('/')[0].isdigit() else None
-    
-    protocols = ['http://', 'https://']  # Always try HTTP first
-    
+        protocols = ['https', 'http']
+        rest      = raw
+
+    host_part = rest.split('/', 1)[0]
+    if ':' in host_part:
+        host, port_str = host_part.rsplit(':', 1)
+        if port_str.isdigit():
+            port = int(port_str)
+            base_domain = host
+        else:
+            base_domain = host_part
+    else:
+        base_domain = host_part
+
     return base_domain, port, protocols
 
 
-async def get_cert_info(ssl_object, url: str) -> dict:
+def _normalize_text(text: str) -> str:
+    '''Collapse all runs of whitespace (including newlines) into single spaces and strip.'''
+
+    if not text:
+        return ''
+    return _WS_RE.sub(' ', text).strip()
+
+
+def parse_title(html: str, content_type: str = None) -> str:
     '''
-    Get SSL certificate information for a domain
-    
-    :param ssl_object: SSL object to get certificate info from
-    :param url: URL to get certificate info from
+    Extract the page title as a single line, max TITLE_MAX_CHARS.
+
+    :param html: HTML content
+    :param content_type: Content-Type header value (used to skip non-HTML)
     '''
 
-    try:            
-        if not ssl_object or not (cert_der := ssl_object.getpeercert(binary_form=True)):
+    if content_type and not any(x in content_type.lower() for x in ('text/html', 'application/xhtml')):
+        return None
+
+    try:
+        soup = bs4.BeautifulSoup(html, 'html.parser')
+        if soup.title and soup.title.string:
+            title = _normalize_text(soup.title.string)
+            return title[:TITLE_MAX_CHARS] if title else None
+    except Exception as e:
+        debug(f'Error parsing title: {e}')
+
+    return None
+
+
+def body_preview(raw_bytes: bytes, encoding: str = 'utf-8') -> str:
+    '''
+    Decode the first BODY_PREVIEW_BYTES bytes of the raw body, normalize whitespace.
+
+    :param raw_bytes: raw response body
+    :param encoding: encoding to attempt for decoding
+    '''
+
+    if not raw_bytes:
+        return None
+    chunk = raw_bytes[:BODY_PREVIEW_BYTES]
+    try:
+        text = chunk.decode(encoding, errors='replace')
+    except Exception:
+        text = chunk.decode('utf-8', errors='replace')
+    text = _normalize_text(text)
+    return text or None
+
+
+def body_clean(html: str) -> str:
+    '''
+    Strip HTML/script/style, normalize whitespace, return first BODY_CLEAN_CHARS chars.
+
+    :param html: HTML content
+    '''
+
+    if not html:
+        return None
+    try:
+        soup = bs4.BeautifulSoup(html, 'html.parser')
+        for tag in soup(('script', 'style', 'noscript')):
+            tag.decompose()
+        text = soup.get_text(separator=' ')
+    except Exception as e:
+        debug(f'Error cleaning body: {e}')
+        return None
+    text = _normalize_text(text)
+    if not text:
+        return None
+    return text[:BODY_CLEAN_CHARS]
+
+
+def parse_cert(ssl_object) -> dict:
+    '''
+    Parse a TLS certificate from a live ssl_object captured on the connected socket.
+
+    :param ssl_object: SSLObject from the live connection (via TraceConfig hook)
+    '''
+
+    try:
+        if ssl_object is None:
+            return None
+        cert_der = ssl_object.getpeercert(binary_form=True)
+        if not cert_der:
             return None
 
         cert = x509.load_der_x509_certificate(cert_der)
 
         try:
-            san_extension = cert.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-            alt_names     = [name.value for name in san_extension.value] if san_extension else []
-        except x509.extensions.ExtensionNotFound:
+            san_ext   = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+            alt_names = [name.value for name in san_ext.value]
+        except x509.ExtensionNotFound:
             alt_names = []
 
-        try:
-            common_name = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        except IndexError:
-            common_name = None
+        def _attr(subject_or_issuer, oid):
+            attrs = subject_or_issuer.get_attributes_for_oid(oid)
+            return attrs[0].value if attrs else None
 
-        try:
-            issuer = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-        except IndexError:
-            issuer = None
+        common_name = _attr(cert.subject, NameOID.COMMON_NAME)
+        issuer      = _attr(cert.issuer,  NameOID.COMMON_NAME)
+
+        # Email: prefer subject EMAIL_ADDRESS attribute, fall back to rfc822Name in SANs.
+        email = _attr(cert.subject, NameOID.EMAIL_ADDRESS)
+        if not email:
+            try:
+                rfc822 = san_ext.value.get_values_for_type(x509.RFC822Name)
+                if rfc822:
+                    email = rfc822[0]
+            except Exception:
+                pass
+
+        not_before = getattr(cert, 'not_valid_before_utc', None) or cert.not_valid_before
+        not_after  = getattr(cert, 'not_valid_after_utc',  None) or cert.not_valid_after
 
         return {
-            'fingerprint'   : cert.fingerprint(hashes.SHA256()).hex(),
-            'common_name'   : common_name,
-            'issuer'        : issuer,
-            'alt_names'     : alt_names,
-            'not_before'    : cert.not_valid_before_utc.isoformat(),
-            'not_after'     : cert.not_valid_after_utc.isoformat(),
-            'version'       : cert.version.value,
-            'serial_number' : format(cert.serial_number, 'x'),
+            'fingerprint' : cert.fingerprint(hashes.SHA256()).hex(),
+            'subject'     : common_name,
+            'issuer'      : issuer,
+            'email'       : email,
+            'alt_names'   : alt_names,
+            'not_before'  : not_before.isoformat(),
+            'not_after'   : not_after.isoformat(),
         }
     except Exception as e:
-        error(f'Error getting cert info for {url}: {str(e)}')
+        debug(f'Error parsing cert: {e}')
         return None
 
 
-async def get_favicon_hash(session, base_url: str, html: str) -> str:
+async def get_favicon_hash(session, base_url: str, html: str, max_bytes: int = DEFAULT_FAVICON_BYTES, timeout: float = 5.0) -> str:
     '''
-    Get favicon hash from a webpage
-    
-    :param session: aiohttp client session
-    :param base_url: base URL of the website
-    :param html: HTML content of the page
+    Fetch the favicon (capped to max_bytes) and return its mmh3 64-bit hash as a string.
+
+    :param session: aiohttp ClientSession
+    :param base_url: base URL of the page (scheme + host)
+    :param html: HTML content (used to discover <link rel="icon">)
+    :param max_bytes: maximum number of bytes to read from the favicon URL
+    :param timeout: request timeout in seconds
     '''
 
     try:
-        soup = bs4.BeautifulSoup(html, 'html.parser')
-        
         favicon_url = None
-        for link in soup.find_all('link'):
-            if link.get('rel') and any(x.lower() == 'icon' for x in link.get('rel')):
-                favicon_url = link.get('href')
-                break
-        
+        try:
+            soup = bs4.BeautifulSoup(html, 'html.parser')
+            for link in soup.find_all('link'):
+                rels = link.get('rel') or []
+                if any(r.lower() == 'icon' for r in rels):
+                    favicon_url = link.get('href')
+                    break
+        except Exception:
+            pass
+
         if not favicon_url:
             favicon_url = '/favicon.ico'
-        
-        if favicon_url.startswith('//'):
-            favicon_url = 'https:' + favicon_url
-        elif favicon_url.startswith('/'):
-            favicon_url = base_url + favicon_url
-        elif not favicon_url.startswith(('http://', 'https://')):
-            favicon_url = base_url + '/' + favicon_url
 
-        async with session.get(favicon_url, timeout=10) as response:
-            if response.status == 200:
-                content    = (await response.read())[:1024*1024]
-                hash_value = mmh3.hash64(content)[0]
-                if hash_value != 0:
-                    return str(hash_value)
+        favicon_url = urllib.parse.urljoin(base_url, favicon_url)
+
+        try:
+            import aiohttp
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
+        except ImportError:
+            client_timeout = timeout
+
+        async with session.get(favicon_url, timeout=client_timeout, ssl=False) as response:
+            if response.status != 200:
+                return None
+            content = b''
+            async for chunk in response.content.iter_chunked(8192):
+                content += chunk
+                if len(content) >= max_bytes:
+                    content = content[:max_bytes]
+                    break
+            if not content:
+                return None
+            hash_value = mmh3.hash64(content)[0]
+            return str(hash_value) if hash_value != 0 else None
 
     except Exception as e:
-        debug(f'Error getting favicon for {base_url}: {str(e)}')
-    
-    return None 
+        debug(f'Error getting favicon for {base_url}: {e}')
+        return None
 
 
 def parse_status_codes(codes_str: str) -> set:
     '''
-    Parse comma-separated status codes and ranges into a set of integers
-    
-    :param codes_str: Comma-separated status codes (e.g., "200,301-399,404,500-503")
+    Parse comma-separated status codes and ranges into a set of ints.
+
+    :param codes_str: e.g. "200,301-399,404,500-503"
     '''
-    
+
     codes = set()
     try:
         for part in codes_str.split(','):
@@ -161,37 +276,15 @@ def parse_status_codes(codes_str: str) -> set:
 
 def parse_shard(shard_str: str) -> tuple:
     '''
-    Parse shard argument in format INDEX/TOTAL
-    
-    :param shard_str: Shard string in format "INDEX/TOTAL"
+    Parse a shard argument in the form "INDEX/TOTAL" (1-based index).
+
+    :param shard_str: shard string "INDEX/TOTAL"
     '''
 
     try:
         shard_index, total_shards = map(int, shard_str.split('/'))
         if shard_index < 1 or total_shards < 1 or shard_index > total_shards:
             raise ValueError
-        return shard_index - 1, total_shards  # Convert to 0-based index
+        return shard_index - 1, total_shards
     except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError('Shard must be in format INDEX/TOTAL where INDEX <= TOTAL') 
-
-
-def parse_title(html: str, content_type: str = None) -> str:
-    '''
-    Parse title from HTML content
-    
-    :param html: HTML content of the page
-    :param content_type: Content-Type header value
-    '''
-
-    # Only parse title for HTML content
-    if content_type and not any(x in content_type.lower() for x in ['text/html', 'application/xhtml']):
-        return None
-        
-    try:
-        soup = bs4.BeautifulSoup(html, 'html.parser', from_encoding='utf-8', features='lxml')
-        if title := soup.title:
-            return title.string.strip()
-    except:
-        pass
-    
-    return None 
+        raise argparse.ArgumentTypeError('Shard must be in format INDEX/TOTAL where INDEX <= TOTAL')
