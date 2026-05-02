@@ -1,3 +1,6 @@
+# httpz - Developed by acidvegas in Python (https://github.com/acidvegas)
+# unit_test.py
+
 #!/usr/bin/env python3
 # HTTPZ Web Scanner - Unit Tests
 # unit_test.py
@@ -16,7 +19,7 @@ except ImportError:
 
 class ColoredFormatter(logging.Formatter):
     '''Custom formatter for colored log output'''
-    
+
     def format(self, record):
         if record.levelno == logging.INFO:
             color = Colors.GREEN
@@ -26,204 +29,169 @@ class ColoredFormatter(logging.Formatter):
             color = Colors.RED
         else:
             color = Colors.RESET
-            
+
         record.msg = f'{color}{record.msg}{Colors.RESET}'
         return super().format(record)
 
 
-# Configure logging with colors
-logger = logging.getLogger()
+logger  = logging.getLogger()
 handler = logging.StreamHandler()
 handler.setFormatter(ColoredFormatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 
+TEST_DOMAINS_URL = 'https://raw.githubusercontent.com/danielmiessler/SecLists/refs/heads/master/Fuzzing/email-top-100-domains.txt'
+
+
 async def get_domains_from_url() -> list:
-    '''
-    Fetch domains from SecLists URL
-    
-    :return: List of domains
-    '''
-    
+    '''Fetch a small known-good set of domains for testing.'''
+
     try:
         import aiohttp
     except ImportError:
         raise ImportError('missing aiohttp library (pip install aiohttp)')
 
-    url = 'https://raw.githubusercontent.com/danielmiessler/SecLists/refs/heads/master/Fuzzing/email-top-100-domains.txt'
-    
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
+        async with session.get(TEST_DOMAINS_URL) as response:
             content = await response.text()
             return [line.strip() for line in content.splitlines() if line.strip()]
 
 
 async def domain_generator(domains: list):
-    '''
-    Async generator that yields domains
-    
-    :param domains: List of domains to yield
-    '''
-    
+    '''Async generator yielding domains one at a time.'''
+
     for domain in domains:
-        await asyncio.sleep(0) # Allow other coroutines to run
+        await asyncio.sleep(0)
         yield domain
 
 
-async def run_benchmark(test_type: str, domains: list, concurrency: int) -> tuple:
-    '''Run a single benchmark test'''
-    
+def _make_scanner(concurrency: int) -> HTTPZScanner:
+    '''Build a scanner with every feature toggle on.'''
+
+    return HTTPZScanner(
+        concurrent_limit     = concurrency,
+        timeout              = 5,
+        retries              = 1,
+        follow_redirects     = True,
+        fetch_headers        = True,
+        fetch_content_type   = True,
+        fetch_content_length = True,
+        fetch_title          = True,
+        fetch_body           = True,
+        fetch_favicon        = True,
+        fetch_tls            = True,
+        fetch_ips            = True,
+        fetch_cname          = True,
+    )
+
+
+async def run_benchmark(test_type: str, source, total: int, concurrency: int) -> tuple:
+    '''Scan a source, log each result, return (elapsed_seconds, throughput).'''
+
     logging.info(f'{Colors.BOLD}Testing {test_type} input with {concurrency} concurrent connections...{Colors.RESET}')
-    scanner = HTTPZScanner(concurrent_limit=concurrency, timeout=3, show_progress=True, debug_mode=True, follow_redirects=True)
-    
-    count = 0
-    got_first = False
+    scanner = _make_scanner(concurrency)
+
+    count      = 0
+    got_first  = False
     start_time = None
-    
-    if test_type == 'List':
-        async for result in scanner.scan(domains):
-            if result:
-                if not got_first:
-                    got_first = True
-                    start_time = time.time()
-                count += 1
-                
-                # More detailed status reporting
-                status_str = ''
-                if result['status'] < 0:
-                    error_type = result.get('error_type', 'UNKNOWN')
-                    error_msg = result.get('error', 'Unknown Error')
-                    status_str = f"{Colors.RED}[{result['status']} - {error_type}: {error_msg}]{Colors.RESET}"
-                elif 200 <= result['status'] < 300:
-                    status_str = f"{Colors.GREEN}[{result['status']}]{Colors.RESET}"
-                elif 300 <= result['status'] < 400:
-                    status_str = f"{Colors.YELLOW}[{result['status']}]{Colors.RESET}"
-                else:
-                    status_str = f"{Colors.RED}[{result['status']}]{Colors.RESET}"
-                
-                # Show protocol and response headers if available
-                protocol_info = f" {Colors.CYAN}({result.get('protocol', 'unknown')}){Colors.RESET}" if result.get('protocol') else ''
-                headers_info = ''
-                if result.get('response_headers'):
-                    important_headers = ['server', 'location', 'content-type']
-                    headers = [f"{k}: {v}" for k, v in result['response_headers'].items() if k.lower() in important_headers]
-                    if headers:
-                        headers_info = f" {Colors.GRAY}[{', '.join(headers)}]{Colors.RESET}"
-                
-                # Show redirect chain if present
-                redirect_info = ''
-                if result.get('redirect_chain'):
-                    redirect_info = f" -> {Colors.YELLOW}Redirects: {' -> '.join(result['redirect_chain'])}{Colors.RESET}"
-                
-                # Show error details if present
-                error_info = ''
-                if result.get('error'):
-                    error_info = f" {Colors.RED}Error: {result['error']}{Colors.RESET}"
-                
-                # Show final URL if different from original
-                url_info = ''
-                if result.get('url') and result['url'] != f"http(s)://{result['domain']}":
-                    url_info = f" {Colors.CYAN}Final URL: {result['url']}{Colors.RESET}"
-                
-                logging.info(
-                    f"{test_type}-{concurrency} Result {count}: "
-                    f"{status_str}{protocol_info} "
-                    f"{Colors.CYAN}{result['domain']}{Colors.RESET}"
-                    f"{redirect_info}"
-                    f"{url_info}"
-                    f"{headers_info}"
-                    f"{error_info}"
-                )
-    else:
-        # Skip generator test
-        pass
 
-    elapsed = time.time() - start_time if start_time else 0
-    domains_per_sec = count/elapsed if elapsed > 0 else 0
-    logging.info(f'{Colors.YELLOW}{test_type} test with {concurrency} concurrent connections completed in {elapsed:.2f} seconds ({domains_per_sec:.2f} domains/sec){Colors.RESET}')
-    
-    return elapsed, domains_per_sec
+    async for result in scanner.scan(source):
+        if not result:
+            continue
+        if not got_first:
+            got_first  = True
+            start_time = time.time()
+        count += 1
+
+        if result['status'] < 0:
+            status_str = f"{Colors.RED}[{result['status']} - {result.get('error_type','UNKNOWN')}: {result.get('error','')}]{Colors.RESET}"
+        elif 200 <= result['status'] < 300:
+            status_str = f"{Colors.GREEN}[{result['status']}]{Colors.RESET}"
+        elif 300 <= result['status'] < 400:
+            status_str = f"{Colors.YELLOW}[{result['status']}]{Colors.RESET}"
+        else:
+            status_str = f"{Colors.RED}[{result['status']}]{Colors.RESET}"
+
+        proto    = f" {Colors.CYAN}({result.get('protocol','unknown')}){Colors.RESET}"
+        title    = f" {Colors.DARK_GREEN}{result['title']}{Colors.RESET}" if result.get('title') else ''
+        ips      = f" {Colors.YELLOW}{','.join(result['ips'])}{Colors.RESET}" if result.get('ips') else ''
+        tls      = f" {Colors.GREEN}TLS:{result['tls']['subject']}{Colors.RESET}" if result.get('tls') else ''
+        favicon  = f" {Colors.PURPLE}fav:{result['favicon_hash']}{Colors.RESET}" if result.get('favicon_hash') else ''
+        redirect = f" {Colors.YELLOW}({len(result['redirect_chain'])} hops){Colors.RESET}" if result.get('redirect_chain') else ''
+        cname    = f" {Colors.PURPLE}CNAME:{'->'.join(result['cname_chain'])}{Colors.RESET}" if result.get('cname_chain') else ''
+
+        logging.info(
+            f'{test_type}-{concurrency} #{count}: '
+            f'{status_str}{proto} '
+            f'{Colors.CYAN}{result["domain"]}{Colors.RESET}'
+            f'{redirect}{cname}{title}{tls}{ips}{favicon}'
+        )
+
+    elapsed = (time.time() - start_time) if start_time else 0
+    rps     = (count / elapsed) if elapsed > 0 else 0
+    logging.info(f'{Colors.YELLOW}{test_type} {concurrency}c: {count}/{total} in {elapsed:.2f}s ({rps:.2f}/s){Colors.RESET}')
+    return elapsed, rps
 
 
-async def test_list_input(domains: list):
-    '''Test scanning using a list input'''
-    
-    logging.info(f'{Colors.BOLD}Testing list input...{Colors.RESET}')
-    scanner = HTTPZScanner(concurrent_limit=25, timeout=3, show_progress=True, debug_mode=True, follow_redirects=True)
-    
-    start_time = time.time()
+async def test_stop(domains: list) -> None:
+    '''Confirm scanner.stop() drains in-flight tasks and exits cleanly.'''
+
+    logging.info(f'{Colors.BOLD}Testing graceful stop()...{Colors.RESET}')
+    scanner = _make_scanner(concurrency=20)
+
+    t0    = time.time()
     count = 0
-    async for result in scanner.scan(domains):
-        if result:
-            count += 1
-            status_color = Colors.GREEN if 200 <= result['status'] < 300 else Colors.RED
-            title = f" - {Colors.CYAN}{result.get('title', 'No Title')}{Colors.RESET}" if result.get('title') else ''
-            error = f" - {Colors.RED}{result.get('error', '')}{Colors.RESET}" if result.get('error') else ''
-            logging.info(f'List-25 Result {count}: {status_color}[{result["status"]}]{Colors.RESET} {Colors.CYAN}{result["domain"]}{Colors.RESET}{title}{error}')
 
+    async def kicker():
+        await asyncio.sleep(1.0)
+        logging.info(f'{Colors.YELLOW}stop() called at {time.time()-t0:.2f}s{Colors.RESET}')
+        await scanner.stop()
 
-async def test_generator_input(domains: list):
-    '''Test scanning using an async generator input'''
-    
-    logging.info(f'{Colors.BOLD}Testing generator input...{Colors.RESET}')
-    scanner = HTTPZScanner(concurrent_limit=25, timeout=3, show_progress=True, debug_mode=True, follow_redirects=True)
-    
-    start_time = time.time()
-    count = 0
-    async for result in scanner.scan(domain_generator(domains)):
-        if result:
-            count += 1
-            status_color = Colors.GREEN if 200 <= result['status'] < 300 else Colors.RED
-            title = f" - {Colors.CYAN}{result.get('title', 'No Title')}{Colors.RESET}" if result.get('title') else ''
-            error = f" - {Colors.RED}{result.get('error', '')}{Colors.RESET}" if result.get('error') else ''
-            logging.info(f'Generator-25 Result {count}: {status_color}[{result["status"]}]{Colors.RESET} {Colors.CYAN}{result["domain"]}{Colors.RESET}{title}{error}')
+    k = asyncio.create_task(kicker())
+    async for _ in scanner.scan(domains):
+        count += 1
+    await k
+
+    elapsed = time.time() - t0
+    if count >= len(domains):
+        raise AssertionError(f'stop() did not interrupt scan ({count}/{len(domains)})')
+    logging.info(f'{Colors.GREEN}stop() OK: drained {count}/{len(domains)} in {elapsed:.2f}s{Colors.RESET}')
 
 
 async def main() -> None:
-    '''Main test function'''
-    
+    '''Run the full test suite.'''
+
     try:
-        # Fetch domains
         domains = await get_domains_from_url()
-        logging.info(f'Loaded {Colors.YELLOW}{len(domains)}{Colors.RESET} domains for testing')
-        
-        # Store benchmark results
+        logging.info(f'Loaded {Colors.YELLOW}{len(domains)}{Colors.RESET} test domains')
+
         results = []
-        
-        # Run tests with different concurrency levels
-        for concurrency in [25, 50, 100]:
-            # Generator tests
-            gen_result = await run_benchmark('Generator', domains, concurrency)
-            results.append(('Generator', concurrency, *gen_result))
-            
-            # List tests
-            list_result = await run_benchmark('List', domains, concurrency)
-            results.append(('List', concurrency, *list_result))
-        
-        # Print benchmark comparison
+        for concurrency in (25, 50, 100):
+            gen_elapsed, gen_rps = await run_benchmark('Generator', domain_generator(domains), len(domains), concurrency)
+            results.append(('Generator', concurrency, gen_elapsed, gen_rps))
+
+            list_elapsed, list_rps = await run_benchmark('List', domains, len(domains), concurrency)
+            results.append(('List', concurrency, list_elapsed, list_rps))
+
+        await test_stop(domains)
+
         logging.info(f'\n{Colors.BOLD}Benchmark Results:{Colors.RESET}')
-        logging.info('-' * 80)
-        logging.info(f'{"Test Type":<15} {"Concurrency":<15} {"Time (s)":<15} {"Domains/sec":<15}')
-        logging.info('-' * 80)
-        
-        # Sort by domains per second (fastest first)
+        logging.info('-' * 70)
+        logging.info(f'{"Type":<12} {"Concurrency":<14} {"Time (s)":<12} {"Domains/sec":<12}')
+        logging.info('-' * 70)
         results.sort(key=lambda x: x[3], reverse=True)
-        
-        for test_type, concurrency, elapsed, domains_per_sec in results:
-            logging.info(f'{test_type:<15} {concurrency:<15} {elapsed:.<15.2f} {domains_per_sec:<15.2f}')
-        
-        # Highlight fastest result
+        for test_type, concurrency, elapsed, rps in results:
+            logging.info(f'{test_type:<12} {concurrency:<14} {elapsed:<12.2f} {rps:<12.2f}')
+
         fastest = results[0]
-        logging.info('-' * 80)
-        logging.info(f'{Colors.GREEN}Fastest: {fastest[0]} test with {fastest[1]} concurrent connections')
-        logging.info(f'Time: {fastest[2]:.2f} seconds')
-        logging.info(f'Speed: {fastest[3]:.2f} domains/sec{Colors.RESET}')
-        
-        logging.info(f'\n{Colors.GREEN}All tests completed successfully!{Colors.RESET}')
-        
+        logging.info('-' * 70)
+        logging.info(f'{Colors.GREEN}Fastest: {fastest[0]} @ {fastest[1]} concurrent — {fastest[3]:.2f}/s{Colors.RESET}')
+        logging.info(f'\n{Colors.GREEN}All tests passed.{Colors.RESET}')
+
     except Exception as e:
-        logging.error(f'Test failed: {Colors.RED}{str(e)}{Colors.RESET}')
+        logging.error(f'Test failed: {Colors.RED}{e}{Colors.RESET}')
+        import traceback; traceback.print_exc()
         sys.exit(1)
 
 
@@ -232,4 +200,4 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         logging.warning(f'{Colors.YELLOW}Tests interrupted by user{Colors.RESET}')
-        sys.exit(1) 
+        sys.exit(1)
