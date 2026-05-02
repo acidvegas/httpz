@@ -10,7 +10,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='httpz_scanner',
-    version='3.1.1',
+    version='3.1.2',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',
