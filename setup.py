@@ -10,7 +10,7 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='httpz_scanner',
-    version='2.1.8',
+    version='3.1.1',
     author='acidvegas',
     author_email='acid.vegas@acid.vegas',
     description='Hyper-fast HTTP Scraping Tool',
@@ -34,6 +34,8 @@ setup(
     ],
     python_requires='>=3.8',
     install_requires=[
+        'aiodns>=3.0.0',
+        'aiofiles>=23.0.0',
         'aiohttp>=3.8.0',
         'beautifulsoup4>=4.9.3',
         'cryptography>=3.4.7',
